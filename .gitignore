@@ -1,0 +1,19 @@
+docs
+.env
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+
+# Node.js
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
