@@ -254,10 +254,6 @@ async def chat(req: ChatRequest):
         )
 
     style_str = style_context_to_str(req.style_context)
-    history_str = "\n".join(
-        f"{'ユーザー' if m['role'] == 'user' else 'アシスタント'}: {m['content']}"
-        for m in req.conversation_history[-10:]
-    )
 
     style_sys = STYLE_UPDATE_SYSTEM.format(style_context=style_str)
     content_sys = CONTENT_UPDATE_SYSTEM.format(
@@ -269,14 +265,13 @@ async def chat(req: ChatRequest):
         editor_content=req.editor_content or "（まだありません）",
     )
 
-    user_msg = f"ユーザーの発話: {req.message}"
-    action_user_msg = f"会話履歴:\n{history_str}\n\nユーザーの発話: {req.message}"
+    history = req.conversation_history[-6:]
 
     # 並列実行: LLM①-a, ①-b, ②
     results = await asyncio.gather(
-        llm.generate_sync(style_sys, user_msg, label="style_update"),
-        llm.generate_sync(content_sys, user_msg, label="content_update"),
-        llm.generate_sync(action_sys, action_user_msg, label="action"),
+        llm.generate_sync(style_sys, req.message, label="style_update"),
+        llm.generate_sync(content_sys, req.message, label="content_update"),
+        llm.generate_sync(action_sys, req.message, label="action", history=history),
         return_exceptions=True,
     )
 

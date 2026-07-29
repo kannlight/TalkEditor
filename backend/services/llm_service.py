@@ -14,11 +14,11 @@ class LLMResponse(BaseModel):
 
 class LLMService(abc.ABC):
     @abc.abstractmethod
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "") -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> AsyncGenerator[str, None]:
         pass
 
     @abc.abstractmethod
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "") -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> str:
         pass
 
 
@@ -27,24 +27,28 @@ class GeminiAdapter(LLMService):
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "") -> AsyncGenerator[str, None]:
+    def _build_contents(self, user_prompt: str, history: list[dict] | None) -> list:
+        contents = []
+        for msg in (history or []):
+            role = "model" if msg["role"] == "assistant" else "user"
+            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+        contents.append(types.Content(role="user", parts=[types.Part(text=user_prompt)]))
+        return contents
+
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> AsyncGenerator[str, None]:
         async for chunk in await self.client.aio.models.generate_content_stream(
             model=self.model_name,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt
-            ),
-            contents=user_prompt
+            config=types.GenerateContentConfig(system_instruction=system_prompt),
+            contents=self._build_contents(user_prompt, history),
         ):
             if chunk.text:
                 yield chunk.text
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "") -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> str:
         response = await self.client.aio.models.generate_content(
             model=self.model_name,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt
-            ),
-            contents=user_prompt
+            config=types.GenerateContentConfig(system_instruction=system_prompt),
+            contents=self._build_contents(user_prompt, history),
         )
         return response.text
 
@@ -57,14 +61,17 @@ class OllamaAdapter(LLMService):
         self.model_name = model_name
         self._client = httpx.AsyncClient(timeout=120.0)
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "") -> AsyncGenerator[str, None]:
+    def _build_messages(self, system_prompt: str, user_prompt: str, history: list[dict] | None) -> list[dict]:
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history or [])
+        messages.append({"role": "user", "content": user_prompt})
+        return messages
+
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> AsyncGenerator[str, None]:
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model_name,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            "messages": self._build_messages(system_prompt, user_prompt, history),
             "stream": True,
         }
         async with self._client.stream("POST", url, json=payload) as response:
@@ -83,14 +90,11 @@ class OllamaAdapter(LLMService):
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "") -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> str:
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model_name,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            "messages": self._build_messages(system_prompt, user_prompt, history),
             "stream": False,
         }
         response = await self._client.post(url, json=payload)

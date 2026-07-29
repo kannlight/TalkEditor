@@ -29,6 +29,7 @@ class LLMCallLogger:
         duration_ms: float,
         success: bool,
         error: Optional[str] = None,
+        history: list[dict] | None = None,
     ):
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -39,6 +40,7 @@ class LLMCallLogger:
             "success": success,
             "error": error,
             "system_prompt": system_prompt,
+            "history": history or [],
             "user_prompt": user_prompt,
             "response": response,
         }
@@ -58,12 +60,12 @@ class LoggingLLMService(LLMService):
         self._service_id = service_id
         self._model = model
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "") -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> str:
         start = time.perf_counter()
         error = None
         response = ""
         try:
-            response = await self._adapter.generate_sync(system_prompt, user_prompt)
+            response = await self._adapter.generate_sync(system_prompt, user_prompt, history=history)
             return response
         except Exception as e:
             error = str(e)
@@ -80,14 +82,15 @@ class LoggingLLMService(LLMService):
                 duration_ms=duration_ms,
                 success=error is None,
                 error=error,
+                history=history,
             )
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "") -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> AsyncGenerator[str, None]:
         start = time.perf_counter()
         chunks: list[str] = []
         error = None
         try:
-            async for chunk in self._adapter.generate_stream(system_prompt, user_prompt):
+            async for chunk in self._adapter.generate_stream(system_prompt, user_prompt, history=history):
                 chunks.append(chunk)
                 yield chunk
         except Exception as e:
@@ -105,4 +108,5 @@ class LoggingLLMService(LLMService):
                 duration_ms=duration_ms,
                 success=error is None,
                 error=error,
+                history=history,
             )
