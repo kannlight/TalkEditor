@@ -274,9 +274,9 @@ async def chat(req: ChatRequest):
 
     # 並列実行: LLM①-a, ①-b, ②
     results = await asyncio.gather(
-        llm.generate_sync(style_sys, user_msg),
-        llm.generate_sync(content_sys, user_msg),
-        llm.generate_sync(action_sys, action_user_msg),
+        llm.generate_sync(style_sys, user_msg, label="style_update"),
+        llm.generate_sync(content_sys, user_msg, label="content_update"),
+        llm.generate_sync(action_sys, action_user_msg, label="action"),
         return_exceptions=True,
     )
 
@@ -324,7 +324,7 @@ async def edit(req: EditRequest):
         for attempt in range(max_retries):
             chunks: list[str] = []
             try:
-                async for chunk in llm.generate_stream(system_prompt, user_prompt):
+                async for chunk in llm.generate_stream(system_prompt, user_prompt, label=f"edit_attempt_{attempt + 1}"):
                     chunks.append(chunk)
 
                 full_content = "".join(chunks)

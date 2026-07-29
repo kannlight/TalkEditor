@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 from dotenv import load_dotenv
 from .llm_service import LLMService, GeminiAdapter, OllamaAdapter
+from .llm_logger import LoggingLLMService
 
 load_dotenv()
 
@@ -28,7 +29,11 @@ class ServiceRegistry:
             model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
             info = ServiceInfo(id="gemini", name="Gemini", type="gemini", model=model)
             self._services.append(info)
-            self._adapters["gemini"] = GeminiAdapter(api_key=api_key, model_name=model)
+            self._adapters["gemini"] = LoggingLLMService(
+                GeminiAdapter(api_key=api_key, model_name=model),
+                service_id="gemini",
+                model=model,
+            )
 
         # Ollama services
         ollama_str = os.getenv("OLLAMA_SERVICES", "").strip()
@@ -42,7 +47,11 @@ class ServiceRegistry:
                 service_id = f"ollama_{i}"
                 info = ServiceInfo(id=service_id, name=name, type="ollama", model=model)
                 self._services.append(info)
-                self._adapters[service_id] = OllamaAdapter(base_url=base_url, model_name=model)
+                self._adapters[service_id] = LoggingLLMService(
+                    OllamaAdapter(base_url=base_url, model_name=model),
+                    service_id=service_id,
+                    model=model,
+                )
 
         if not self._services:
             print("[ServiceRegistry] Warning: No LLM services configured in .env")

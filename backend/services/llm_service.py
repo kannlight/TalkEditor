@@ -14,11 +14,11 @@ class LLMResponse(BaseModel):
 
 class LLMService(abc.ABC):
     @abc.abstractmethod
-    async def generate_stream(self, system_prompt: str, user_prompt: str) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "") -> AsyncGenerator[str, None]:
         pass
 
     @abc.abstractmethod
-    async def generate_sync(self, system_prompt: str, user_prompt: str) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "") -> str:
         pass
 
 
@@ -27,7 +27,7 @@ class GeminiAdapter(LLMService):
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "") -> AsyncGenerator[str, None]:
         async for chunk in await self.client.aio.models.generate_content_stream(
             model=self.model_name,
             config=types.GenerateContentConfig(
@@ -38,7 +38,7 @@ class GeminiAdapter(LLMService):
             if chunk.text:
                 yield chunk.text
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "") -> str:
         response = await self.client.aio.models.generate_content(
             model=self.model_name,
             config=types.GenerateContentConfig(
@@ -57,7 +57,7 @@ class OllamaAdapter(LLMService):
         self.model_name = model_name
         self._client = httpx.AsyncClient(timeout=120.0)
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "") -> AsyncGenerator[str, None]:
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model_name,
@@ -83,7 +83,7 @@ class OllamaAdapter(LLMService):
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "") -> str:
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model_name,
