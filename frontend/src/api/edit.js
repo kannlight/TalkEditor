@@ -9,3 +9,13 @@ export function postEdit(payload, onMessage, onDone, onError) {
         onError,
     )
 }
+
+export function postGenerate(payload, onMessage, onDone, onError) {
+    return fetchSSE(
+        '/api/generate',
+        { method: 'POST', body: JSON.stringify(payload) },
+        onMessage,
+        onDone,
+        onError,
+    )
+}

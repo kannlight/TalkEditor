@@ -4,10 +4,11 @@ import { EditorView, basicSetup } from 'codemirror'
 import { unifiedMergeView } from '@codemirror/merge'
 import { markdown } from '@codemirror/lang-markdown'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { Check, Undo2 } from 'lucide-react'
+import { Check, Undo2, Loader2, Pencil } from 'lucide-react'
 import useEditorStore from '../stores/editorStore'
 import useSettingsStore from '../stores/settingsStore'
 import useContextStore from '../stores/contextStore'
+import { useGenerate } from '../hooks/useGenerate'
 
 const editorBaseTheme = EditorView.theme({
     '&.cm-editor': { backgroundColor: 'transparent', height: '100%' },
@@ -37,9 +38,10 @@ const darkBgOverride = EditorView.theme({
 })
 
 export default function EditorPanel() {
-    const { isDiffMode, pendingEditedContent, setContent, exitDiffMode } = useEditorStore()
+    const { isDiffMode, content, pendingEditedContent, setContent, exitDiffMode } = useEditorStore()
     const { theme } = useSettingsStore()
     const { style: styleCtx } = useContextStore()
+    const { isGenerating, handleGenerate } = useGenerate()
 
     const containerRef = useRef(null)
     const viewRef = useRef(null)
@@ -122,7 +124,7 @@ export default function EditorPanel() {
         exitDiffMode(prevContent)
     }
 
-    return (
+return (
         <div className="pane">
             <div className="px-4 py-3 border-b border-border shrink-0 flex items-center justify-between min-h-[53px]">
                 <h2 className="font-semibold text-sm text-foreground">エディタ</h2>
@@ -147,8 +149,32 @@ export default function EditorPanel() {
                 )}
             </div>
 
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden relative">
                 <div ref={containerRef} className="h-full" />
+                {!content && !isDiffMode && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm">
+                        <p className="text-sm text-muted-foreground text-center max-w-[240px]">
+                            対話が十分になったら、文章の生成を開始できます
+                        </p>
+                        <button
+                            onClick={handleGenerate}
+                            disabled={isGenerating}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-60 transition-all shadow-sm"
+                        >
+                            {isGenerating ? (
+                                <>
+                                    <Loader2 size={15} className="animate-spin" />
+                                    生成中...
+                                </>
+                            ) : (
+                                <>
+                                    <Pencil size={15} />
+                                    文章を生成する
+                                </>
+                            )}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     )

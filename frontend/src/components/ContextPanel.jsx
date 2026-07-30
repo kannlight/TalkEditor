@@ -1,5 +1,8 @@
 import React from 'react'
+import { Loader2, Pencil } from 'lucide-react'
 import useContextStore from '../stores/contextStore'
+import useEditorStore from '../stores/editorStore'
+import { useGenerate } from '../hooks/useGenerate'
 
 const TEXT_FIELDS = [
     { key: 'theme', label: 'テーマ・トピック' },
@@ -13,6 +16,8 @@ const FORMAT_OPTIONS = ['Plain', 'Markdown', 'LaTeX', 'HTML']
 
 export default function ContextPanel() {
     const { style, content, updateStyle, updateContent } = useContextStore()
+    const { content: editorContent, isDiffMode } = useEditorStore()
+    const { isGenerating, handleGenerate } = useGenerate()
 
     return (
         <div className="h-full overflow-y-auto p-4 custom-scrollbar space-y-6">
@@ -92,6 +97,26 @@ export default function ContextPanel() {
                     className="w-full text-sm bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                 />
             </section>
+
+            {!editorContent && !isDiffMode && (
+                <button
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-60 transition-all shadow-sm"
+                >
+                    {isGenerating ? (
+                        <>
+                            <Loader2 size={15} className="animate-spin" />
+                            生成中...
+                        </>
+                    ) : (
+                        <>
+                            <Pencil size={15} />
+                            文章を生成する
+                        </>
+                    )}
+                </button>
+            )}
         </div>
     )
 }

@@ -8,6 +8,7 @@ import useEditorStore from '../stores/editorStore'
 export default function RightPanel() {
     const [activePanel, setActivePanel] = useState('context')
     const isDiffMode = useEditorStore(s => s.isDiffMode)
+    const isGenerating = useEditorStore(s => s.isGenerating)
     const contextUpdatedAt = useContextStore(s => s.updatedAt)
     const hasMountedRef = useRef(false)
 
@@ -19,6 +20,11 @@ export default function RightPanel() {
         }
         if (isDiffMode) setActivePanel('editor')
     }, [isDiffMode])
+
+    // 生成開始時もエディタタブへ切り替え
+    useEffect(() => {
+        if (isGenerating) setActivePanel('editor')
+    }, [isGenerating])
 
     // コンテキストが更新されたらコンテキストパネルへ切り替え
     useEffect(() => {

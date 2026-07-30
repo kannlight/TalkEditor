@@ -64,6 +64,12 @@ class EditRequest(BaseModel):
     service_id: str
 
 
+class GenerateRequest(BaseModel):
+    style_context: StyleContext
+    content_context: str
+    service_id: str
+
+
 # --- Helpers ---
 
 def style_context_to_str(ctx: StyleContext) -> str:
@@ -219,17 +225,54 @@ ACTION_SYSTEM = """あなたはライティング支援AIエージェントで�
 選択できるアクション:
 - question : 書きたい内容についてユーザーに質問する（アイデアを引き出す）
 - clarify  : ユーザーの指示の意図が不明瞭なとき、確認のための質問をする
-- edit_text: 文章を編集する（文章が存在する場合のみ選択可能）
+- edit_text: 文章を編集する
 
 選択基準:
 - ユーザーがアイデアや内容を話している → question（次に聞くべきことを質問する）
 - 指示の意図が読み取れない → clarify
-- 明確な編集・修正・生成の指示がある → edit_text
+- 明確な編集・修正の指示がある → edit_text
 
 出力ルール:
 - question/clarify は <action type="..."><message>メッセージ本文</message></action>
 - edit_text は <action type="edit_text"><plan>何をどう編集するかの説明</plan></action>
 - タグ以外の文字は出力しない"""
+
+ACTION_SYSTEM_EMPTY_EDITOR = """あなたはライティング支援AIエージェントです。
+ユーザーの発話に対して、適切なアクションを1つ選択してください。
+
+現在の状況:
+[スタイル設定]
+{style_context}
+
+[書きたい内容のメモ]
+{content_context}
+
+※ 現在、文章はまだ存在しません。ユーザーはこれから作成する内容を整理している段階です。
+
+選択できるアクション:
+- question : 書きたい内容についてユーザーに質問する（アイデアを引き出す）
+- clarify  : ユーザーの指示の意図が不明瞭なとき、確認のための質問をする
+
+選択基準:
+- ユーザーがアイデアや内容を話している → question（次に聞くべきことを質問する）
+- 指示の意図が読み取れない → clarify
+
+出力ルール:
+- <action type="..."><message>メッセージ本文</message></action>
+- タグ以外の文字は出力しない"""
+
+GENERATE_SYSTEM = """あなたはライティング支援AIです。
+スタイル設定と内容メモをもとに、文章を新規作成してください。
+
+スタイル設定:
+{style_context}
+
+内容メモ:
+{content_context}
+
+出力ルール:
+- 生成した文章全体を <target> タグで囲んで出力する
+- <target> タグ以外の説明文は出力しない"""
 
 EDIT_SYSTEM = """あなたはライティング支援AIです。
 編集計画に従って文章の該当箇所を書き換えてください。
@@ -262,11 +305,18 @@ async def chat(req: ChatRequest):
     content_sys = CONTENT_UPDATE_SYSTEM.format(
         content_context=req.content_context or "（まだありません）"
     )
-    action_sys = ACTION_SYSTEM.format(
-        style_context=style_str,
-        content_context=req.content_context or "（まだありません）",
-        editor_content=req.editor_content or "（まだありません）",
-    )
+
+    if req.editor_content.strip():
+        action_sys = ACTION_SYSTEM.format(
+            style_context=style_str,
+            content_context=req.content_context or "（まだありません）",
+            editor_content=req.editor_content,
+        )
+    else:
+        action_sys = ACTION_SYSTEM_EMPTY_EDITOR.format(
+            style_context=style_str,
+            content_context=req.content_context or "（まだありません）",
+        )
 
     history = req.conversation_history[-6:]
 
@@ -345,3 +395,49 @@ async def edit(req: EditRequest):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.post("/generate")
+async def generate_initial(req: GenerateRequest):
+    style_str = style_context_to_str(req.style_context)
+    system_prompt = GENERATE_SYSTEM.format(
+        style_context=style_str,
+        content_context=req.content_context or "（未設定）",
+    )
+    user_prompt = "文章を生成してください。"
+
+    async def stream():
+        llm = get_llm_service(req.service_id)
+        if not llm:
+            yield f"data: {json.dumps({'content': 'LLMサービスが設定されていません。'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        max_retries = 3
+        last_chunks: list[str] = []
+
+        for attempt in range(max_retries):
+            chunks: list[str] = []
+            try:
+                async for chunk in llm.generate_stream(system_prompt, user_prompt, label=f"generate_attempt_{attempt + 1}"):
+                    chunks.append(chunk)
+
+                full_content = "".join(chunks)
+                if "<target>" in full_content and "</target>" in full_content:
+                    for chunk in chunks:
+                        yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+
+                last_chunks = chunks
+                print(f"[Generate] Retry {attempt + 1}: <target> tag not found")
+
+            except Exception as e:
+                print(f"[Generate] Error on attempt {attempt + 1}: {e}")
+                last_chunks = chunks
+
+        for chunk in last_chunks:
+            yield f"data: {json.dumps({'content': chunk})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
