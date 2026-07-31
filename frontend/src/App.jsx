@@ -1,11 +1,24 @@
 import React, { useEffect } from 'react'
-import { Moon, Sun, FilePlus } from 'lucide-react'
+import { Moon, Sun, LayoutGrid } from 'lucide-react'
 import ChatPanel from './components/ChatPanel'
 import RightPanel from './components/RightPanel'
+import DocumentListScreen from './components/DocumentListScreen'
 import useSettingsStore from './stores/settingsStore'
+import useIndexStore from './stores/indexStore'
 import useChatStore from './stores/chatStore'
 import useContextStore from './stores/contextStore'
 import useEditorStore from './stores/editorStore'
+import { docId } from './stores/docId'
+
+function getDocTitle(style, messages) {
+    if (style.theme) return style.theme
+    const first = messages.find(m => m.role === 'user')
+    if (first) {
+        const t = first.content
+        return t.length > 50 ? t.slice(0, 50) + '…' : t
+    }
+    return '無題'
+}
 
 function App() {
     const {
@@ -13,16 +26,7 @@ function App() {
         setAvailableServices, setActiveServiceId,
         theme, toggleTheme, initTheme,
     } = useSettingsStore()
-    const resetMessages = useChatStore(s => s.resetMessages)
-    const resetContext = useContextStore(s => s.resetContext)
-    const resetEditor = useEditorStore(s => s.resetEditor)
-
-    const handleNewDocument = () => {
-        if (!window.confirm('すべてリセットして新しい文章を書きますか？')) return
-        resetMessages()
-        resetContext()
-        resetEditor()
-    }
+    const updateEntry = useIndexStore(s => s.updateEntry)
 
     useEffect(() => { initTheme() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -38,23 +42,44 @@ function App() {
             .catch(err => console.error('Failed to fetch LLM services:', err))
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+    const handleReturnToList = () => {
+        const { style } = useContextStore.getState()
+        const { messages } = useChatStore.getState()
+        const { content: editorContent } = useEditorStore.getState()
+        const { content: contextContent } = useContextStore.getState()
+
+        const title = getDocTitle(style, messages)
+        const src = editorContent || contextContent || ''
+        const preview = src.replace(/\n+/g, ' ').trim().slice(0, 100)
+
+        updateEntry(docId, { title, preview, updatedAt: Date.now() })
+        window.location.href = '/'
+    }
+
+    if (!docId) {
+        return <DocumentListScreen />
+    }
+
     return (
         <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
             <header className="flex items-center justify-between px-6 py-3 border-b border-border bg-background/95 backdrop-blur shrink-0 z-20">
-                <div className="flex items-center gap-3">
+                <button
+                    onClick={handleReturnToList}
+                    className="flex items-center gap-3 hover:opacity-75 transition-opacity"
+                    title="文章一覧に戻る"
+                >
                     <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-bold shadow-sm text-sm">
                         T
                     </div>
                     <h1 className="text-lg font-bold tracking-tight">TalkEditor</h1>
-                </div>
+                </button>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={handleNewDocument}
+                        onClick={handleReturnToList}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                        title="新しい文章を書く（全リセット）"
                     >
-                        <FilePlus size={13} />
-                        新しい文章を書く
+                        <LayoutGrid size={13} />
+                        文章一覧
                     </button>
                     {availableServices.length > 0 && (
                         <select
