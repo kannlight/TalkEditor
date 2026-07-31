@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { LayoutList, FileText } from 'lucide-react'
+import { LayoutList, FileText, RotateCcw } from 'lucide-react'
 import ContextPanel from './ContextPanel'
 import EditorPanel from './EditorPanel'
 import useContextStore from '../stores/contextStore'
@@ -10,7 +10,14 @@ export default function RightPanel() {
     const isDiffMode = useEditorStore(s => s.isDiffMode)
     const isGenerating = useEditorStore(s => s.isGenerating)
     const contextUpdatedAt = useContextStore(s => s.updatedAt)
+    const resetContext = useContextStore(s => s.resetContext)
+    const contextStyle = useContextStore(s => s.style)
+    const contextContent = useContextStore(s => s.content)
     const hasMountedRef = useRef(false)
+
+    const hasContextData = contextContent || Object.values(contextStyle).some(v =>
+        Array.isArray(v) ? v.length > 0 : (v && v !== 'Plain')
+    )
 
     // diff modeに入ったらエディタへ切り替え（マウント時は除く）
     useEffect(() => {
@@ -57,6 +64,16 @@ export default function RightPanel() {
                     <FileText size={13} />
                     エディタ
                 </button>
+                {activePanel === 'context' && hasContextData && (
+                    <button
+                        onClick={resetContext}
+                        className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent px-2 py-1 rounded-md transition-colors"
+                        title="コンテキストをリセット"
+                    >
+                        <RotateCcw size={12} />
+                        リセット
+                    </button>
+                )}
             </div>
 
             <div className="flex-1 overflow-hidden">

@@ -1,8 +1,11 @@
 import React, { useEffect } from 'react'
-import { Moon, Sun } from 'lucide-react'
+import { Moon, Sun, FilePlus } from 'lucide-react'
 import ChatPanel from './components/ChatPanel'
 import RightPanel from './components/RightPanel'
 import useSettingsStore from './stores/settingsStore'
+import useChatStore from './stores/chatStore'
+import useContextStore from './stores/contextStore'
+import useEditorStore from './stores/editorStore'
 
 function App() {
     const {
@@ -10,6 +13,16 @@ function App() {
         setAvailableServices, setActiveServiceId,
         theme, toggleTheme, initTheme,
     } = useSettingsStore()
+    const resetMessages = useChatStore(s => s.resetMessages)
+    const resetContext = useContextStore(s => s.resetContext)
+    const resetEditor = useEditorStore(s => s.resetEditor)
+
+    const handleNewDocument = () => {
+        if (!window.confirm('すべてリセットして新しい文章を書きますか？')) return
+        resetMessages()
+        resetContext()
+        resetEditor()
+    }
 
     useEffect(() => { initTheme() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -35,6 +48,14 @@ function App() {
                     <h1 className="text-lg font-bold tracking-tight">TalkEditor</h1>
                 </div>
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleNewDocument}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        title="新しい文章を書く（全リセット）"
+                    >
+                        <FilePlus size={13} />
+                        新しい文章を書く
+                    </button>
                     {availableServices.length > 0 && (
                         <select
                             value={activeServiceId ?? ''}

@@ -1,32 +1,44 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
-const useContextStore = create((set) => ({
-    style: {
-        theme: '',
-        purpose: '',
-        audience: '',
-        image: '',
-        format: 'Plain',
-        style: [],
-        length: '',
-        notes: '',
-    },
-    content: '',
-    updatedAt: 0,
+const INITIAL_STYLE = {
+    theme: '',
+    purpose: '',
+    audience: '',
+    image: '',
+    format: 'Plain',
+    style: [],
+    length: '',
+    notes: '',
+}
 
-    updateStyle: (patch) => set((state) => {
-        // null / undefined の値は無視する（LLM出力の未更新フィールド）
-        const clean = Object.fromEntries(
-            Object.entries(patch).filter(([, v]) => v !== null && v !== undefined)
-        )
-        if (Object.keys(clean).length === 0) return {}
-        return {
-            style: { ...state.style, ...clean },
-            updatedAt: Date.now(),
+const useContextStore = create(
+    persist(
+        (set) => ({
+            style: { ...INITIAL_STYLE },
+            content: '',
+            updatedAt: 0,
+
+            updateStyle: (patch) => set((state) => {
+                const clean = Object.fromEntries(
+                    Object.entries(patch).filter(([, v]) => v !== null && v !== undefined)
+                )
+                if (Object.keys(clean).length === 0) return {}
+                return {
+                    style: { ...state.style, ...clean },
+                    updatedAt: Date.now(),
+                }
+            }),
+
+            updateContent: (str) => set({ content: str, updatedAt: Date.now() }),
+
+            resetContext: () => set({ style: { ...INITIAL_STYLE }, content: '', updatedAt: 0 }),
+        }),
+        {
+            name: 'talkeditor-context',
+            partialize: (state) => ({ style: state.style, content: state.content }),
         }
-    }),
-
-    updateContent: (str) => set({ content: str, updatedAt: Date.now() }),
-}))
+    )
+)
 
 export default useContextStore

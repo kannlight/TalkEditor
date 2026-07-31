@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Loader2, Check, X } from 'lucide-react'
+import { Send, Loader2, Check, X, RotateCcw } from 'lucide-react'
 import useChatStore from '../stores/chatStore'
 import useContextStore from '../stores/contextStore'
 import useEditorStore from '../stores/editorStore'
@@ -114,7 +114,7 @@ function MessageBubble({ message }) {
 
 export default function ChatPanel() {
     const [input, setInput] = useState('')
-    const { messages, isLoading, addMessage, setLoading } = useChatStore()
+    const { messages, isLoading, addMessage, setLoading, resetMessages } = useChatStore()
     const contextStore = useContextStore()
     const { content: editorContent } = useEditorStore()
     const { activeServiceId } = useSettingsStore()
@@ -202,8 +202,18 @@ export default function ChatPanel() {
 
     return (
         <div className="pane">
-            <div className="px-4 py-3 border-b border-border shrink-0">
+            <div className="px-4 py-3 border-b border-border shrink-0 flex items-center justify-between">
                 <h2 className="font-semibold text-sm text-foreground">チャット</h2>
+                {messages.length > 0 && (
+                    <button
+                        onClick={resetMessages}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent px-2 py-1 rounded-md transition-colors"
+                        title="会話をリセット"
+                    >
+                        <RotateCcw size={12} />
+                        リセット
+                    </button>
+                )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
