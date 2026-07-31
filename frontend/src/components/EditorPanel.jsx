@@ -21,8 +21,7 @@ const editorBaseTheme = EditorView.theme({
     },
     '.cm-content': {
         padding: '2rem',
-        maxWidth: '52rem',
-        margin: '0 auto',
+        margin: '0 2rem',
         caretColor: 'hsl(var(--foreground))',
     },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'hsl(var(--foreground))' },
