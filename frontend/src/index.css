@@ -80,39 +80,89 @@
   height: 100%;
 }
 
-/* Inserted text */
+/* Gutter: thin color bar */
+.cm-changeGutter {
+  width: 3px !important;
+  padding: 0 !important;
+}
+.cm-changedLineGutter {
+  background: hsl(142 70% 45%) !important;
+}
+.cm-deletedLineGutter {
+  background: hsl(var(--destructive)) !important;
+}
+
+/* Inserted / changed lines */
 .cm-insertedLine,
 .cm-changedLine {
-  background-color: hsl(142 70% 45% / 0.08) !important;
+  background-color: hsl(142 70% 45% / 0.06) !important;
 }
-.cm-insertedText {
-  background-color: hsl(142 70% 45% / 0.25) !important;
+.cm-insertedText,
+.cm-changedText {
+  background-color: hsl(142 70% 45% / 0.18) !important;
+  background-image: none !important;
   border-radius: 2px;
 }
 
-/* Deleted text */
+/* Deleted chunk block */
 .cm-deletedChunk {
-  background-color: hsl(var(--destructive) / 0.08) !important;
+  background-color: hsl(var(--destructive) / 0.05) !important;
+  border-top: 1px solid hsl(var(--destructive) / 0.12);
+  border-bottom: 1px solid hsl(var(--destructive) / 0.12);
+  padding-block: 2px;
 }
 .cm-deletedText {
-  background-color: hsl(var(--destructive) / 0.2) !important;
-  text-decoration: line-through;
+  background-color: hsl(var(--destructive) / 0.15) !important;
   border-radius: 2px;
 }
 
-/* Accept/Reject chunk buttons */
-.cm-changeGutter {
-  width: 1.5rem;
+/* Accept/Reject buttons inside deleted chunks */
+.cm-deletedChunk .cm-chunkButtons {
+  display: flex;
+  gap: 4px;
+  inset-inline-end: 5px !important;
 }
-.cm-mergeAccept,
-.cm-mergeReject {
+.cm-deletedChunk button {
+  font-size: 0.6875rem !important;
+  font-weight: 500 !important;
+  padding: 2px 10px !important;
+  border-radius: var(--radius) !important;
+  border: 1px solid transparent !important;
   cursor: pointer;
-  opacity: 0.6;
-  font-size: 0.75rem;
-  line-height: 1.5rem;
+  transition: background-color 0.15s, border-color 0.15s, opacity 0.15s;
+  line-height: 1.5;
+  opacity: 0.85;
 }
-.cm-mergeAccept:hover { opacity: 1; color: hsl(142 70% 45%); }
-.cm-mergeReject:hover  { opacity: 1; color: hsl(var(--destructive)); }
+.cm-deletedChunk button:hover {
+  opacity: 1;
+}
+.cm-deletedChunk button[name="accept"] {
+  background: hsl(142 70% 45% / 0.12) !important;
+  color: hsl(142 70% 32%) !important;
+  border-color: hsl(142 70% 45% / 0.25) !important;
+}
+.cm-deletedChunk button[name="accept"]:hover {
+  background: hsl(142 70% 45% / 0.2) !important;
+}
+.cm-deletedChunk button[name="reject"] {
+  background: hsl(var(--destructive) / 0.1) !important;
+  color: hsl(var(--destructive)) !important;
+  border-color: hsl(var(--destructive) / 0.2) !important;
+}
+.cm-deletedChunk button[name="reject"]:hover {
+  background: hsl(var(--destructive) / 0.18) !important;
+}
+
+/* Dark mode adjustments */
+.dark .cm-deletedChunk button[name="accept"] {
+  color: hsl(142 60% 60%) !important;
+}
+
+/* Collapsed unchanged lines */
+.cm-collapsedLines {
+  color: hsl(var(--muted-foreground)) !important;
+  background: hsl(var(--muted)) !important;
+}
 
 @layer utilities {
   .custom-scrollbar::-webkit-scrollbar {
