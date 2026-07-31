@@ -88,7 +88,20 @@ export default function EditorPanel() {
         viewRef.current = view
         checkDiff(state)
 
-        return () => { view.destroy(); viewRef.current = null }
+        // Accept ボタン押下後: CM が originalDoc を更新するので、それを content に反映
+        // Reject ボタン押下後: CM が doc を更新するので、updateListener が setDraft を呼ぶ（追加処理不要）
+        const handleChunkButton = (e) => {
+            if (!e.target.closest('button[name="accept"]')) return
+            const newOriginal = getOriginalDoc(view.state).toString()
+            useEditorStore.getState().setContent(newOriginal)
+        }
+        containerRef.current.addEventListener('click', handleChunkButton)
+
+        return () => {
+            containerRef.current?.removeEventListener('click', handleChunkButton)
+            view.destroy()
+            viewRef.current = null
+        }
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
     // テーマの動的切り替え
