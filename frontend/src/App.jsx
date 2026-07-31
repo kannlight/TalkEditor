@@ -106,10 +106,10 @@ function App() {
             </header>
 
             <main className="flex-1 flex overflow-hidden divide-x divide-border">
-                <div className="w-2/5 shrink-0 flex flex-col min-w-[320px] max-w-[480px]">
+                <div className="w-1/2 flex flex-col">
                     <ChatPanel />
                 </div>
-                <div className="flex-1 flex flex-col min-w-[400px]">
+                <div className="w-1/2 flex flex-col">
                     <RightPanel />
                 </div>
             </main>
