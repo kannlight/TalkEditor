@@ -60,12 +60,12 @@ class LoggingLLMService(LLMService):
         self._service_id = service_id
         self._model = model
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None) -> str:
         start = time.perf_counter()
         error = None
         response = ""
         try:
-            response = await self._adapter.generate_sync(system_prompt, user_prompt, history=history)
+            response = await self._adapter.generate_sync(system_prompt, user_prompt, history=history, response_schema=response_schema)
             return response
         except Exception as e:
             error = str(e)
