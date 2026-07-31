@@ -7,8 +7,10 @@ import useEditorStore from '../stores/editorStore'
 
 export default function RightPanel() {
     const [activePanel, setActivePanel] = useState('context')
-    const isDiffMode = useEditorStore(s => s.isDiffMode)
+    const draft = useEditorStore(s => s.draft)
+    const content = useEditorStore(s => s.content)
     const isGenerating = useEditorStore(s => s.isGenerating)
+    const hasDiff = draft !== content
     const contextUpdatedAt = useContextStore(s => s.updatedAt)
     const resetContext = useContextStore(s => s.resetContext)
     const contextStyle = useContextStore(s => s.style)
@@ -19,14 +21,14 @@ export default function RightPanel() {
         Array.isArray(v) ? v.length > 0 : (v && v !== 'Plain')
     )
 
-    // diff modeに入ったらエディタへ切り替え（マウント時は除く）
+    // 差分が発生したらエディタへ切り替え（マウント時は除く）
     useEffect(() => {
         if (!hasMountedRef.current) {
             hasMountedRef.current = true
             return
         }
-        if (isDiffMode) setActivePanel('editor')
-    }, [isDiffMode])
+        if (hasDiff) setActivePanel('editor')
+    }, [hasDiff])
 
     // 生成開始時もエディタタブへ切り替え
     useEffect(() => {

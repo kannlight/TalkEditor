@@ -11,7 +11,7 @@ function MessageBubble({ message, isLastUser, onEdit }) {
     const [isEditing, setIsEditing] = useState(false)
     const { setActionStatus } = useChatStore()
     const contextStore = useContextStore()
-    const { content: editorContent, enterDiffMode } = useEditorStore()
+    const { content: editorContent, setDraft } = useEditorStore()
     const { activeServiceId } = useSettingsStore()
 
     const handleApprove = async () => {
@@ -29,7 +29,7 @@ function MessageBubble({ message, isLastUser, onEdit }) {
                 fullContent += data.content
             },
             () => {
-                enterDiffMode(fullContent)
+                setDraft(fullContent)
                 setActionStatus(message.id, 'approved')
                 setIsEditing(false)
             },

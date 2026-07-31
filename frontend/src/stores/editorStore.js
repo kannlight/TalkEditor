@@ -4,41 +4,32 @@ import { docId } from './docId'
 
 const storeCreator = (set) => ({
     content: '',
-    isDiffMode: false,
+    draft: '',
     isGenerating: false,
-    prevContent: '',
-    pendingEditedContent: '',
 
     setContent: (str) => set({ content: str }),
+    setDraft: (str) => set({ draft: str }),
     setGenerating: (val) => set({ isGenerating: val }),
 
-    enterDiffMode: (editedContent) => set((state) => ({
-        prevContent: state.content,
-        pendingEditedContent: editedContent,
-        isDiffMode: true,
-        isGenerating: false,
+    confirmDraft: () => set((state) => ({
+        content: state.draft,
     })),
 
-    exitDiffMode: (finalContent) => set({
-        isDiffMode: false,
-        content: finalContent,
-        pendingEditedContent: '',
-        prevContent: '',
-    }),
+    discardDraft: () => set((state) => ({
+        draft: state.content,
+    })),
 
     resetEditor: () => set({
         content: '',
-        isDiffMode: false,
+        draft: '',
         isGenerating: false,
-        prevContent: '',
-        pendingEditedContent: '',
     }),
 })
 
 const useEditorStore = docId
     ? create(persist(storeCreator, {
         name: `talkeditor-editor-${docId}`,
-        partialize: (state) => ({ content: state.content }),
+        partialize: (state) => ({ content: state.content, draft: state.draft }),
     }))
     : create(storeCreator)
 

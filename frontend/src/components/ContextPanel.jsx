@@ -16,7 +16,7 @@ const FORMAT_OPTIONS = ['Plain', 'Markdown', 'LaTeX', 'HTML']
 
 export default function ContextPanel() {
     const { style, content, updateStyle, updateContent } = useContextStore()
-    const { content: editorContent, isDiffMode } = useEditorStore()
+    const { content: editorContent, draft: editorDraft } = useEditorStore()
     const { isGenerating, handleGenerate } = useGenerate()
 
     return (
@@ -98,7 +98,7 @@ export default function ContextPanel() {
                 />
             </section>
 
-            {!editorContent && !isDiffMode && (
+            {!editorContent && !editorDraft && (
                 <button
                     onClick={handleGenerate}
                     disabled={isGenerating}
