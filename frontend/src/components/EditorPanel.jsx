@@ -75,7 +75,17 @@ export default function EditorPanel() {
                 unifiedMergeView({ original, mergeControls: true, highlightChanges: true }),
                 EditorView.updateListener.of(update => {
                     if (update.docChanged) {
-                        setDraft(update.state.doc.toString())
+                        const isUserEdit = update.transactions.some(tr =>
+                            tr.isUserEvent('input') || tr.isUserEvent('delete') ||
+                            tr.isUserEvent('undo') || tr.isUserEvent('redo')
+                        )
+                        const newDoc = update.state.doc.toString()
+                        setDraft(newDoc)
+                        if (isUserEdit) {
+                            useEditorStore.getState().setContent(newDoc)
+                            setHasDiff(false)
+                            return
+                        }
                     }
                     if (update.docChanged || update.startState !== update.state) {
                         checkDiff(update.state)
