@@ -20,10 +20,7 @@ export function useGenerate() {
             },
             (data) => { fullContent += data.content },
             () => {
-                const generated = fullContent
-                    .replace(/<target>/g, '')
-                    .replace(/<\/target>/g, '')
-                enterDiffMode(generated)
+                enterDiffMode(fullContent)
             },
             (err) => {
                 console.error('Generate failed:', err)

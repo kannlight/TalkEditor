@@ -18,7 +18,7 @@ class LLMService(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None) -> str:
         pass
 
 
@@ -44,10 +44,14 @@ class GeminiAdapter(LLMService):
             if chunk.text:
                 yield chunk.text
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None) -> str:
+        config_kwargs = {"system_instruction": system_prompt}
+        if response_schema is not None:
+            config_kwargs["response_mime_type"] = "application/json"
+            config_kwargs["response_schema"] = response_schema
         response = await self.client.aio.models.generate_content(
             model=self.model_name,
-            config=types.GenerateContentConfig(system_instruction=system_prompt),
+            config=types.GenerateContentConfig(**config_kwargs),
             contents=self._build_contents(user_prompt, history),
         )
         return response.text
@@ -90,13 +94,22 @@ class OllamaAdapter(LLMService):
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None) -> str:
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model_name,
             "messages": self._build_messages(system_prompt, user_prompt, history),
             "stream": False,
         }
+        if response_schema is not None:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_schema.__name__,
+                    "strict": True,
+                    "schema": response_schema.model_json_schema(),
+                },
+            }
         response = await self._client.post(url, json=payload)
         response.raise_for_status()
         data = response.json()

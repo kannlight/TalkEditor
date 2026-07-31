@@ -1,7 +1,5 @@
 import asyncio
-import re
 import json
-import xml.etree.ElementTree as ET
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -70,6 +68,31 @@ class GenerateRequest(BaseModel):
     service_id: str
 
 
+# --- LLM応答スキーマ ---
+
+class StyleUpdateSchema(BaseModel):
+    updated: bool
+    theme: Optional[str] = None
+    purpose: Optional[str] = None
+    audience: Optional[str] = None
+    image: Optional[str] = None
+    format: Optional[str] = None
+    style: Optional[list[str]] = None
+    length: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ContentUpdateSchema(BaseModel):
+    updated: bool
+    content: Optional[str] = None
+
+
+class ActionSchema(BaseModel):
+    action: str
+    message: Optional[str] = None
+    plan: Optional[str] = None
+
+
 # --- Helpers ---
 
 def style_context_to_str(ctx: StyleContext) -> str:
@@ -92,86 +115,43 @@ def style_context_to_str(ctx: StyleContext) -> str:
     return "\n".join(lines) if lines else "（未設定）"
 
 
-def parse_style_update(xml_text: str) -> Optional[StyleUpdate]:
+def parse_style_update_json(text: str) -> Optional[StyleUpdate]:
     try:
-        # Empty / self-closing → no update
-        if re.search(r'<style_update\s*/>', xml_text):
+        data = json.loads(text)
+        if not data.get("updated", False):
             return None
-        if re.search(r'<style_update\s*>\s*</style_update>', xml_text):
-            return None
-
-        match = re.search(r'(<style_update>.*?</style_update>)', xml_text, re.DOTALL)
-        if not match:
-            return None
-
-        root = ET.fromstring(match.group(1))
-
-        field_map = {
-            "テーマ・トピック": "theme",
-            "文章の目的": "purpose",
-            "想定読者": "audience",
-            "イメージ": "image",
-            "フォーマット": "format",
-            "スタイル": "style",
-            "文章の量感": "length",
-            "その他メモ": "notes",
-        }
-
-        patch: dict = {}
-        for field_elem in root.findall('field'):
-            name = field_elem.get('name', '')
-            value = (field_elem.text or '').strip()
-            key = field_map.get(name)
-            if key and value:
-                if key == 'style':
-                    patch[key] = [s.strip() for s in value.split(',') if s.strip()]
-                else:
-                    patch[key] = value
-
+        patch = {}
+        for key in ("theme", "purpose", "audience", "image", "format", "style", "length", "notes"):
+            if key in data and data[key] is not None:
+                patch[key] = data[key]
         return StyleUpdate(**patch) if patch else None
-    except Exception:
+    except (json.JSONDecodeError, Exception):
         return None
 
 
-def parse_content_update(xml_text: str) -> Optional[str]:
+def parse_content_update_json(text: str) -> Optional[str]:
     try:
-        if re.search(r'<content_update\s*/>', xml_text):
+        data = json.loads(text)
+        if not data.get("updated", False):
             return None
-        if re.search(r'<content_update\s*>\s*</content_update>', xml_text):
-            return None
-
-        match = re.search(r'<content_update>(.*?)</content_update>', xml_text, re.DOTALL)
-        if not match:
-            return None
-
-        content = match.group(1).strip()
-        return content if content else None
-    except Exception:
+        content = data.get("content")
+        return content.strip() if content else None
+    except (json.JSONDecodeError, Exception):
         return None
 
 
-def parse_action(xml_text: str) -> Optional[ActionResult]:
+def parse_action_json(text: str) -> Optional[ActionResult]:
     try:
-        match = re.search(r'(<action\s[^>]*>.*?</action>)', xml_text, re.DOTALL)
-        if not match:
+        data = json.loads(text)
+        action_type = data.get("action", "")
+        if action_type not in ("question", "clarify", "edit_text"):
             return None
-
-        root = ET.fromstring(match.group(1))
-        action_type = root.get('type', '')
-        if action_type not in ('question', 'clarify', 'edit_text'):
-            return None
-
-        if action_type == 'edit_text':
-            plan_elem = root.find('plan')
-            plan = (plan_elem.text or '').strip() if plan_elem is not None else ''
-            return ActionResult(type='edit_text', plan=plan)
+        if action_type == "edit_text":
+            return ActionResult(type="edit_text", plan=data.get("plan", ""))
         else:
-            msg_elem = root.find('message')
-            message = (msg_elem.text or '').strip() if msg_elem is not None else ''
-            if not message:
-                return None
-            return ActionResult(type=action_type, message=message)
-    except Exception:
+            message = data.get("message", "")
+            return ActionResult(type=action_type, message=message) if message else None
+    except (json.JSONDecodeError, Exception):
         return None
 
 
@@ -180,29 +160,46 @@ MAX_RETRIES = 3
 
 async def _style_update_with_retry(llm, system_prompt: str, user_prompt: str) -> Optional[StyleUpdate]:
     for attempt in range(MAX_RETRIES):
-        raw = await llm.generate_sync(system_prompt, user_prompt, label=f"style_update_attempt_{attempt + 1}")
-        if '<style_update' in raw:
-            return parse_style_update(raw)
-        print(f"[StyleUpdate] Retry {attempt + 1}: valid tag not found")
+        raw = await llm.generate_sync(
+            system_prompt, user_prompt,
+            label=f"style_update_attempt_{attempt + 1}",
+            response_schema=StyleUpdateSchema,
+        )
+        try:
+            json.loads(raw)
+            return parse_style_update_json(raw)
+        except json.JSONDecodeError:
+            print(f"[StyleUpdate] Retry {attempt + 1}: invalid JSON")
     return None
 
 
 async def _content_update_with_retry(llm, system_prompt: str, user_prompt: str) -> Optional[str]:
     for attempt in range(MAX_RETRIES):
-        raw = await llm.generate_sync(system_prompt, user_prompt, label=f"content_update_attempt_{attempt + 1}")
-        if '<content_update' in raw:
-            return parse_content_update(raw)
-        print(f"[ContentUpdate] Retry {attempt + 1}: valid tag not found")
+        raw = await llm.generate_sync(
+            system_prompt, user_prompt,
+            label=f"content_update_attempt_{attempt + 1}",
+            response_schema=ContentUpdateSchema,
+        )
+        try:
+            json.loads(raw)
+            return parse_content_update_json(raw)
+        except json.JSONDecodeError:
+            print(f"[ContentUpdate] Retry {attempt + 1}: invalid JSON")
     return None
 
 
 async def _action_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> ActionResult:
     for attempt in range(MAX_RETRIES):
-        raw = await llm.generate_sync(system_prompt, user_prompt, label=f"action_attempt_{attempt + 1}", history=history)
-        result = parse_action(raw)
+        raw = await llm.generate_sync(
+            system_prompt, user_prompt,
+            label=f"action_attempt_{attempt + 1}",
+            history=history,
+            response_schema=ActionSchema,
+        )
+        result = parse_action_json(raw)
         if result is not None:
             return result
-        print(f"[Action] Retry {attempt + 1}: valid tag not found")
+        print(f"[Action] Retry {attempt + 1}: valid JSON not found")
     raise HTTPException(status_code=502, detail="アクション選択に失敗しました。再度お試しください。")
 
 
@@ -214,20 +211,21 @@ STYLE_UPDATE_SYSTEM = """あなたはライティング支援AIのコンポー�
 現在のスタイル設定:
 {style_context}
 
-更新対象フィールド（<field name="..."> の name に使う文字列を以下から選ぶこと）:
-- テーマ・トピック
-- 文章の目的
-- 想定読者
-- イメージ（ブログ / 学術論文 / 報告書 / 小説 等）
-- フォーマット（Plain / Markdown / LaTeX / HTML）
-- スタイル（箇条書き多用 / パラグラフライティング / だ・である調 等、具体的な指定、複数可）
-- 文章の量感
-- その他メモ
+更新対象フィールド:
+- theme: テーマ・トピック
+- purpose: 文章の目的
+- audience: 想定読者
+- image: イメージ（ブログ / 学術論文 / 報告書 / 小説 等）
+- format: フォーマット（Plain / Markdown / LaTeX / HTML）
+- style: スタイル（箇条書き多用 / パラグラフライティング / だ・である調 等、具体的な指定、複数可。文字列の配列として出力）
+- length: 文章の量感
+- notes: その他メモ
 
 出力ルール:
-- 更新が必要なフィールドのみ <style_update> 内に <field name="...">値</field> の形式で出力する
-- 更新が不要な場合は <style_update/> のみ出力する
-- タグ以外の文字は出力しない"""
+- JSON形式で出力する
+- 更新がある場合: "updated"をtrueにし、更新するフィールドのみ含める
+- 更新がない場合: {{"updated": false}}
+- 例: {{"updated": true, "theme": "AI技術の未来", "style": ["だ・である調", "箇条書き多用"]}}"""
 
 CONTENT_UPDATE_SYSTEM = """あなたはライティング支援AIのコンポーネントです。
 ユーザーの発話を受けて、書きたい内容のメモ（箇条書き）を更新してください。
@@ -238,11 +236,11 @@ CONTENT_UPDATE_SYSTEM = """あなたはライティング支援AIのコンポー
 更新ルール:
 - ユーザーの言葉をなるべくそのまま引用する
 - 現在のメモに新しい情報を統合し、論理的な順序に並べる
-- 発話に書きたい内容に関する情報がなければ <content_update/> のみ出力する
 
 出力ルール:
-- 更新後の箇条書き全体を <content_update> 内に出力する（全体置き換え）
-- タグ以外の文字は出力しない"""
+- JSON形式で出力する
+- 更新がある場合: {{"updated": true, "content": "更新後の箇条書き全体"}}
+- 更新がない場合: {{"updated": false, "content": null}}"""
 
 ACTION_SYSTEM = """あなたはライティング支援AIエージェントです。
 ユーザーの発話に対して、適切なアクションを1つ選択してください。
@@ -268,9 +266,9 @@ ACTION_SYSTEM = """あなたはライティング支援AIエージェントで�
 - 明確な編集・修正の指示がある → edit_text
 
 出力ルール:
-- question/clarify は <action type="..."><message>メッセージ本文</message></action>
-- edit_text は <action type="edit_text"><plan>何をどう編集するかの説明</plan></action>
-- タグ以外の文字は出力しない"""
+- JSON形式で出力する
+- question/clarify: {{"action": "question", "message": "メッセージ本文"}}
+- edit_text: {{"action": "edit_text", "plan": "何をどう編集するかの説明"}}"""
 
 ACTION_SYSTEM_EMPTY_EDITOR = """あなたはライティング支援AIエージェントです。
 ユーザーの発話に対して、適切なアクションを1つ選択してください。
@@ -293,8 +291,9 @@ ACTION_SYSTEM_EMPTY_EDITOR = """あなたはライティング支援AIエージ�
 - 指示の意図が読み取れない → clarify
 
 出力ルール:
-- <action type="..."><message>メッセージ本文</message></action>
-- タグ以外の文字は出力しない"""
+- JSON形式で出力する
+- {{"action": "question", "message": "メッセージ本文"}}
+- {{"action": "clarify", "message": "メッセージ本文"}}"""
 
 GENERATE_SYSTEM = """あなたはライティング支援AIです。
 スタイル設定と内容メモをもとに、文章を新規作成してください。
@@ -306,8 +305,8 @@ GENERATE_SYSTEM = """あなたはライティング支援AIです。
 {content_context}
 
 出力ルール:
-- 生成した文章全体を <target> タグで囲んで出力する
-- <target> タグ以外の説明文は出力しない"""
+- 生成した文章のみを出力する
+- 説明文などは一切付けない"""
 
 EDIT_SYSTEM = """あなたはライティング支援AIです。
 編集計画に従って文章の該当箇所を書き換えてください。
@@ -426,26 +425,22 @@ async def generate_initial(req: GenerateRequest):
             yield "data: [DONE]\n\n"
             return
 
-        for attempt in range(MAX_RETRIES):
-            chunks: list[str] = []
-            try:
-                async for chunk in llm.generate_stream(system_prompt, user_prompt, label=f"generate_attempt_{attempt + 1}"):
-                    chunks.append(chunk)
+        chunks: list[str] = []
+        try:
+            async for chunk in llm.generate_stream(system_prompt, user_prompt, label="generate"):
+                chunks.append(chunk)
 
-                full_content = "".join(chunks)
-                if "<target>" in full_content and "</target>" in full_content:
-                    for chunk in chunks:
-                        yield f"data: {json.dumps({'content': chunk})}\n\n"
-                    yield "data: [DONE]\n\n"
-                    return
-
-                print(f"[Generate] Retry {attempt + 1}: <target> tag not found")
-
-            except Exception as e:
-                print(f"[Generate] Error on attempt {attempt + 1}: {e}")
-                yield f"data: {json.dumps({'error': '文章の生成中にエラーが発生しました。再度お試しください。'})}\n\n"
+            if chunks:
+                for chunk in chunks:
+                    yield f"data: {json.dumps({'content': chunk})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
+
+        except Exception as e:
+            print(f"[Generate] Error: {e}")
+            yield f"data: {json.dumps({'error': '文章の生成中にエラーが発生しました。再度お試しください。'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         yield f"data: {json.dumps({'error': '文章の生成に失敗しました。再度お試しください。'})}\n\n"
         yield "data: [DONE]\n\n"
