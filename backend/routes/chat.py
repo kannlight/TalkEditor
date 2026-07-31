@@ -309,7 +309,7 @@ GENERATE_SYSTEM = """あなたはライティング支援AIです。
 - 説明文などは一切付けない"""
 
 EDIT_SYSTEM = """あなたはライティング支援AIです。
-編集計画に従って文章の該当箇所を書き換えてください。
+編集計画に従って与えられた文章を書き換えてください。
 
 スタイル設定:
 {style_context}
@@ -318,9 +318,8 @@ EDIT_SYSTEM = """あなたはライティング支援AIです。
 {edit_plan}
 
 出力ルール:
-- 編集した箇所を <target> タグで囲み、文章全体を出力する
-- <target> タグ付きの文章全体のみを出力する（説明文は不要）
-- <target> タグは必ず1つだけ使用する"""
+- 編集後の文章全体のみを出力する
+- 説明文などは一切付けない"""
 
 
 # --- Endpoints ---
@@ -382,26 +381,22 @@ async def edit(req: EditRequest):
             yield "data: [DONE]\n\n"
             return
 
-        for attempt in range(MAX_RETRIES):
-            chunks: list[str] = []
-            try:
-                async for chunk in llm.generate_stream(system_prompt, user_prompt, label=f"edit_attempt_{attempt + 1}"):
-                    chunks.append(chunk)
+        chunks: list[str] = []
+        try:
+            async for chunk in llm.generate_stream(system_prompt, user_prompt, label="edit"):
+                chunks.append(chunk)
 
-                full_content = "".join(chunks)
-                if "<target>" in full_content and "</target>" in full_content:
-                    for chunk in chunks:
-                        yield f"data: {json.dumps({'content': chunk})}\n\n"
-                    yield "data: [DONE]\n\n"
-                    return
-
-                print(f"[Edit] Retry {attempt + 1}: <target> tag not found")
-
-            except Exception as e:
-                print(f"[Edit] Error on attempt {attempt + 1}: {e}")
-                yield f"data: {json.dumps({'error': '文章の編集中にエラーが発生しました。再度お試しください。'})}\n\n"
+            if chunks:
+                for chunk in chunks:
+                    yield f"data: {json.dumps({'content': chunk})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
+
+        except Exception as e:
+            print(f"[Edit] Error: {e}")
+            yield f"data: {json.dumps({'error': '文章の編集中にエラーが発生しました。再度お試しください。'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         yield f"data: {json.dumps({'error': '文章の編集に失敗しました。再度お試しください。'})}\n\n"
         yield "data: [DONE]\n\n"

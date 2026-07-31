@@ -29,11 +29,7 @@ function MessageBubble({ message, isLastUser, onEdit }) {
                 fullContent += data.content
             },
             () => {
-                // <target> タグを除去して編集後テキストを取得
-                const editedContent = fullContent
-                    .replace(/<target>/g, '')
-                    .replace(/<\/target>/g, '')
-                enterDiffMode(editedContent)
+                enterDiffMode(fullContent)
                 setActionStatus(message.id, 'approved')
                 setIsEditing(false)
             },
