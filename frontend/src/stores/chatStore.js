@@ -16,6 +16,15 @@ const storeCreator = (set) => ({
 
     setLoading: (bool) => set({ isLoading: bool }),
 
+    popLastUserMessage: () => {
+        const state = useChatStore.getState()
+        const lastUserIdx = state.messages.findLastIndex(m => m.role === 'user')
+        if (lastUserIdx === -1) return null
+        const userMsg = state.messages[lastUserIdx]
+        set({ messages: state.messages.slice(0, lastUserIdx) })
+        return userMsg.content
+    },
+
     resetMessages: () => set({ messages: [], isLoading: false }),
 })
 

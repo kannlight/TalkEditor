@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Loader2, Check, X, RotateCcw } from 'lucide-react'
+import { Send, Loader2, Check, X, RotateCcw, Pencil } from 'lucide-react'
 import useChatStore from '../stores/chatStore'
 import useContextStore from '../stores/contextStore'
 import useEditorStore from '../stores/editorStore'
@@ -7,7 +7,7 @@ import useSettingsStore from '../stores/settingsStore'
 import { postChat } from '../api/chat'
 import { postEdit } from '../api/edit'
 
-function MessageBubble({ message }) {
+function MessageBubble({ message, isLastUser, onEdit }) {
     const [isEditing, setIsEditing] = useState(false)
     const { setActionStatus } = useChatStore()
     const contextStore = useContextStore()
@@ -39,6 +39,7 @@ function MessageBubble({ message }) {
             },
             (err) => {
                 console.error('Edit failed:', err)
+                setActionStatus(message.id, 'error')
                 setIsEditing(false)
             },
         )
@@ -51,6 +52,15 @@ function MessageBubble({ message }) {
     if (message.role === 'user') {
         return (
             <div className="flex justify-end mb-4">
+                {isLastUser && (
+                    <button
+                        onClick={onEdit}
+                        className="self-center mr-1.5 p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                        title="メッセージを編集"
+                    >
+                        <Pencil size={12} />
+                    </button>
+                )}
                 <div className="max-w-[80%] bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm whitespace-pre-wrap">
                     {message.content}
                 </div>
@@ -61,7 +71,7 @@ function MessageBubble({ message }) {
     // アシスタントメッセージ
     return (
         <div className="flex justify-start mb-4">
-            <div className="max-w-[88%] bg-muted rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm text-foreground">
+            <div className={`max-w-[88%] rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm ${message.isError ? 'bg-destructive/10 text-destructive' : 'bg-muted text-foreground'}`}>
                 <p className="whitespace-pre-wrap">{message.content}</p>
 
                 {message.action?.type === 'edit_text' && (
@@ -100,6 +110,19 @@ function MessageBubble({ message }) {
                                 <Check size={11} /> 承認済み
                             </span>
                         )}
+                        {message.action.status === 'error' && (
+                            <div className="flex items-center gap-2">
+                                <span className="flex items-center gap-1 text-xs text-destructive">
+                                    <X size={11} /> エラーが発生しました
+                                </span>
+                                <button
+                                    onClick={handleApprove}
+                                    className="flex items-center gap-1 px-2 py-1 text-xs text-primary hover:bg-primary/10 rounded transition-colors"
+                                >
+                                    <RotateCcw size={10} /> 再試行
+                                </button>
+                            </div>
+                        )}
                         {message.action.status === 'rejected' && (
                             <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <X size={11} /> 却下済み
@@ -114,7 +137,7 @@ function MessageBubble({ message }) {
 
 export default function ChatPanel() {
     const [input, setInput] = useState('')
-    const { messages, isLoading, addMessage, setLoading, resetMessages } = useChatStore()
+    const { messages, isLoading, addMessage, setLoading, resetMessages, popLastUserMessage } = useChatStore()
     const contextStore = useContextStore()
     const { content: editorContent } = useEditorStore()
     const { activeServiceId } = useSettingsStore()
@@ -182,11 +205,13 @@ export default function ChatPanel() {
             }
         } catch (err) {
             console.error('Chat failed:', err)
+            const detail = err.message?.includes('HTTP error') ? '' : err.message
             addMessage({
                 id: crypto.randomUUID(),
                 role: 'assistant',
-                content: 'エラーが発生しました。もう一度お試しください。',
+                content: detail || 'エラーが発生しました。',
                 action: null,
+                isError: true,
             })
         } finally {
             setLoading(false)
@@ -224,9 +249,22 @@ export default function ChatPanel() {
                         </p>
                     </div>
                 )}
-                {messages.map(msg => (
-                    <MessageBubble key={msg.id} message={msg} />
-                ))}
+                {messages.map((msg, idx) => {
+                    const isLastUser = msg.role === 'user' &&
+                        !isLoading &&
+                        messages.slice(idx + 1).every(m => m.role !== 'user')
+                    return (
+                        <MessageBubble
+                            key={msg.id}
+                            message={msg}
+                            isLastUser={isLastUser}
+                            onEdit={() => {
+                                const content = popLastUserMessage()
+                                if (content) setInput(content)
+                            }}
+                        />
+                    )
+                })}
                 {isLoading && (
                     <div className="flex justify-start mb-4">
                         <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3">

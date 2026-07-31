@@ -34,9 +34,16 @@ export async function fetchSSE(url, options, onMessage, onDone, onError) {
                     }
                     try {
                         const parsed = JSON.parse(data)
+                        if (parsed.error) {
+                            throw new Error(parsed.error)
+                        }
                         onMessage && onMessage(parsed)
                     } catch (e) {
-                        console.error('Failed to parse SSE data', data)
+                        if (e instanceof SyntaxError) {
+                            console.error('Failed to parse SSE data', data)
+                        } else {
+                            throw e
+                        }
                     }
                 }
             }

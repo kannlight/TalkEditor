@@ -2,7 +2,7 @@ import asyncio
 import re
 import json
 import xml.etree.ElementTree as ET
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -150,14 +150,16 @@ def parse_content_update(xml_text: str) -> Optional[str]:
         return None
 
 
-def parse_action(xml_text: str) -> ActionResult:
+def parse_action(xml_text: str) -> Optional[ActionResult]:
     try:
         match = re.search(r'(<action\s[^>]*>.*?</action>)', xml_text, re.DOTALL)
         if not match:
-            return ActionResult(type="question", message="もう少し詳しく教えていただけますか？")
+            return None
 
         root = ET.fromstring(match.group(1))
-        action_type = root.get('type', 'question')
+        action_type = root.get('type', '')
+        if action_type not in ('question', 'clarify', 'edit_text'):
+            return None
 
         if action_type == 'edit_text':
             plan_elem = root.find('plan')
@@ -166,9 +168,42 @@ def parse_action(xml_text: str) -> ActionResult:
         else:
             msg_elem = root.find('message')
             message = (msg_elem.text or '').strip() if msg_elem is not None else ''
+            if not message:
+                return None
             return ActionResult(type=action_type, message=message)
     except Exception:
-        return ActionResult(type="question", message="もう少し詳しく教えていただけますか？")
+        return None
+
+
+MAX_RETRIES = 3
+
+
+async def _style_update_with_retry(llm, system_prompt: str, user_prompt: str) -> Optional[StyleUpdate]:
+    for attempt in range(MAX_RETRIES):
+        raw = await llm.generate_sync(system_prompt, user_prompt, label=f"style_update_attempt_{attempt + 1}")
+        if '<style_update' in raw:
+            return parse_style_update(raw)
+        print(f"[StyleUpdate] Retry {attempt + 1}: valid tag not found")
+    return None
+
+
+async def _content_update_with_retry(llm, system_prompt: str, user_prompt: str) -> Optional[str]:
+    for attempt in range(MAX_RETRIES):
+        raw = await llm.generate_sync(system_prompt, user_prompt, label=f"content_update_attempt_{attempt + 1}")
+        if '<content_update' in raw:
+            return parse_content_update(raw)
+        print(f"[ContentUpdate] Retry {attempt + 1}: valid tag not found")
+    return None
+
+
+async def _action_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> ActionResult:
+    for attempt in range(MAX_RETRIES):
+        raw = await llm.generate_sync(system_prompt, user_prompt, label=f"action_attempt_{attempt + 1}", history=history)
+        result = parse_action(raw)
+        if result is not None:
+            return result
+        print(f"[Action] Retry {attempt + 1}: valid tag not found")
+    raise HTTPException(status_code=502, detail="アクション選択に失敗しました。再度お試しください。")
 
 
 # --- Prompts ---
@@ -295,9 +330,7 @@ EDIT_SYSTEM = """あなたはライティング支援AIです。
 async def chat(req: ChatRequest):
     llm = get_llm_service(req.service_id)
     if not llm:
-        return ChatResponse(
-            action=ActionResult(type="question", message="LLMサービスが設定されていません。")
-        )
+        raise HTTPException(status_code=400, detail="LLMサービスが設定されていません。")
 
     style_str = style_context_to_str(req.style_context)
 
@@ -320,28 +353,12 @@ async def chat(req: ChatRequest):
 
     history = req.conversation_history[-6:]
 
-    # 並列実行: LLM①-a, ①-b, ②
-    results = await asyncio.gather(
-        llm.generate_sync(style_sys, req.message, label="style_update"),
-        llm.generate_sync(content_sys, req.message, label="content_update"),
-        llm.generate_sync(action_sys, req.message, label="action", history=history),
-        return_exceptions=True,
+    # 並列実行: LLM①-a, ①-b, ② (リトライ付き)
+    style_update, content_update, action = await asyncio.gather(
+        _style_update_with_retry(llm, style_sys, req.message),
+        _content_update_with_retry(llm, content_sys, req.message),
+        _action_with_retry(llm, action_sys, req.message, history),
     )
-
-    style_raw, content_raw, action_raw = results
-
-    style_update = None
-    if not isinstance(style_raw, Exception):
-        style_update = parse_style_update(style_raw)
-
-    content_update = None
-    if not isinstance(content_raw, Exception):
-        content_update = parse_content_update(content_raw)
-
-    if isinstance(action_raw, Exception):
-        action = ActionResult(type="question", message="もう少し詳しく教えていただけますか？")
-    else:
-        action = parse_action(action_raw)
 
     return ChatResponse(
         style_update=style_update,
@@ -366,10 +383,7 @@ async def edit(req: EditRequest):
             yield "data: [DONE]\n\n"
             return
 
-        max_retries = 3
-        last_chunks: list[str] = []
-
-        for attempt in range(max_retries):
+        for attempt in range(MAX_RETRIES):
             chunks: list[str] = []
             try:
                 async for chunk in llm.generate_stream(system_prompt, user_prompt, label=f"edit_attempt_{attempt + 1}"):
@@ -382,16 +396,15 @@ async def edit(req: EditRequest):
                     yield "data: [DONE]\n\n"
                     return
 
-                last_chunks = chunks
                 print(f"[Edit] Retry {attempt + 1}: <target> tag not found")
 
             except Exception as e:
                 print(f"[Edit] Error on attempt {attempt + 1}: {e}")
-                last_chunks = chunks
+                yield f"data: {json.dumps({'error': '文章の編集中にエラーが発生しました。再度お試しください。'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
-        # 全リトライ失敗時: 最後の結果をそのまま返す
-        for chunk in last_chunks:
-            yield f"data: {json.dumps({'content': chunk})}\n\n"
+        yield f"data: {json.dumps({'error': '文章の編集に失敗しました。再度お試しください。'})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -413,10 +426,7 @@ async def generate_initial(req: GenerateRequest):
             yield "data: [DONE]\n\n"
             return
 
-        max_retries = 3
-        last_chunks: list[str] = []
-
-        for attempt in range(max_retries):
+        for attempt in range(MAX_RETRIES):
             chunks: list[str] = []
             try:
                 async for chunk in llm.generate_stream(system_prompt, user_prompt, label=f"generate_attempt_{attempt + 1}"):
@@ -429,15 +439,15 @@ async def generate_initial(req: GenerateRequest):
                     yield "data: [DONE]\n\n"
                     return
 
-                last_chunks = chunks
                 print(f"[Generate] Retry {attempt + 1}: <target> tag not found")
 
             except Exception as e:
                 print(f"[Generate] Error on attempt {attempt + 1}: {e}")
-                last_chunks = chunks
+                yield f"data: {json.dumps({'error': '文章の生成中にエラーが発生しました。再度お試しください。'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
-        for chunk in last_chunks:
-            yield f"data: {json.dumps({'content': chunk})}\n\n"
+        yield f"data: {json.dumps({'error': '文章の生成に失敗しました。再度お試しください。'})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
