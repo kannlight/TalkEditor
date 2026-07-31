@@ -1,5 +1,5 @@
 import React from 'react'
-import { FilePlus, Trash2, Moon, Sun } from 'lucide-react'
+import { Plus, FileText, Trash2, Moon, Sun } from 'lucide-react'
 import useIndexStore from '../stores/indexStore'
 import useSettingsStore from '../stores/settingsStore'
 
@@ -39,8 +39,8 @@ export default function DocumentListScreen() {
     }
 
     return (
-        <div className="min-h-screen bg-background text-foreground flex flex-col">
-            <header className="flex items-center justify-between px-8 py-4 border-b border-border shrink-0">
+        <div className="min-h-screen bg-secondary/30 text-foreground flex flex-col">
+            <header className="flex items-center justify-between px-8 py-4 bg-background border-b border-border shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-bold shadow-sm text-sm">
                         T
@@ -57,55 +57,66 @@ export default function DocumentListScreen() {
             </header>
 
             <main className="flex-1 max-w-3xl w-full mx-auto px-8 py-10">
-                <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-xl font-semibold">文章一覧</h2>
-                    <button
-                        onClick={handleCreate}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 transition-opacity shadow-sm"
-                    >
-                        <FilePlus size={14} />
-                        新しい文章を作成
-                    </button>
-                </div>
-
                 {entries.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
-                        <p className="text-sm text-muted-foreground">まだ文章がありません</p>
+                    <div className="flex flex-col items-center justify-center py-32 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-accent flex items-center justify-center mb-6">
+                            <FileText size={28} className="text-muted-foreground" />
+                        </div>
+                        <h2 className="text-lg font-semibold mb-2">文章を作成しましょう</h2>
+                        <p className="text-sm text-muted-foreground mb-8 max-w-xs">
+                            AIと対話しながら文章を作成・編集できます。<br />
+                            まずは新しい文章を作ってみましょう。
+                        </p>
                         <button
                             onClick={handleCreate}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+                            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 transition-opacity shadow-sm"
                         >
-                            <FilePlus size={14} />
-                            最初の文章を作成する
+                            <Plus size={16} />
+                            新しい文章を作成
                         </button>
                     </div>
                 ) : (
-                    <div className="space-y-2">
-                        {entries.map(entry => (
-                            <div
-                                key={entry.id}
-                                onClick={() => handleOpen(entry.id)}
-                                className="group flex items-center gap-4 p-4 rounded-xl border border-border hover:border-primary/40 hover:bg-accent/30 cursor-pointer transition-all"
+                    <>
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-lg font-semibold">文章一覧</h2>
+                            <button
+                                onClick={handleCreate}
+                                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 transition-opacity shadow-sm"
                             >
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-medium text-sm truncate">{entry.title}</p>
-                                    {entry.preview && (
-                                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{entry.preview}</p>
-                                    )}
-                                </div>
-                                <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
-                                    {formatDate(entry.updatedAt)}
-                                </span>
-                                <button
-                                    onClick={(e) => handleDelete(e, entry.id)}
-                                    className="opacity-0 group-hover:opacity-100 p-1.5 text-muted-foreground hover:text-destructive rounded-md transition-all shrink-0"
-                                    title="削除"
+                                <Plus size={14} />
+                                新規作成
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {entries.map(entry => (
+                                <div
+                                    key={entry.id}
+                                    onClick={() => handleOpen(entry.id)}
+                                    className="group flex items-center gap-4 p-4 rounded-xl bg-background border border-border hover:border-primary/40 hover:shadow-sm cursor-pointer transition-all"
                                 >
-                                    <Trash2 size={14} />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
+                                    <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center shrink-0">
+                                        <FileText size={16} className="text-muted-foreground" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm truncate">{entry.title}</p>
+                                        {entry.preview && (
+                                            <p className="text-xs text-muted-foreground mt-0.5 truncate">{entry.preview}</p>
+                                        )}
+                                    </div>
+                                    <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
+                                        {formatDate(entry.updatedAt)}
+                                    </span>
+                                    <button
+                                        onClick={(e) => handleDelete(e, entry.id)}
+                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-muted-foreground hover:text-destructive rounded-md transition-all shrink-0"
+                                        title="削除"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </>
                 )}
             </main>
         </div>
