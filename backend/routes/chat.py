@@ -158,11 +158,12 @@ def parse_action_json(text: str) -> Optional[ActionResult]:
 MAX_RETRIES = 3
 
 
-async def _style_update_with_retry(llm, system_prompt: str, user_prompt: str) -> Optional[StyleUpdate]:
+async def _style_update_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> Optional[StyleUpdate]:
     for attempt in range(MAX_RETRIES):
         raw = await llm.generate_sync(
             system_prompt, user_prompt,
             label=f"style_update_attempt_{attempt + 1}",
+            history=history,
             response_schema=StyleUpdateSchema,
         )
         try:
@@ -173,11 +174,12 @@ async def _style_update_with_retry(llm, system_prompt: str, user_prompt: str) ->
     return None
 
 
-async def _content_update_with_retry(llm, system_prompt: str, user_prompt: str) -> Optional[str]:
+async def _content_update_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> Optional[str]:
     for attempt in range(MAX_RETRIES):
         raw = await llm.generate_sync(
             system_prompt, user_prompt,
             label=f"content_update_attempt_{attempt + 1}",
+            history=history,
             response_schema=ContentUpdateSchema,
         )
         try:
@@ -353,8 +355,8 @@ async def chat(req: ChatRequest):
 
     # 並列実行: LLM①-a, ①-b, ② (リトライ付き)
     style_update, content_update, action = await asyncio.gather(
-        _style_update_with_retry(llm, style_sys, req.message),
-        _content_update_with_retry(llm, content_sys, req.message),
+        _style_update_with_retry(llm, style_sys, req.message, history),
+        _content_update_with_retry(llm, content_sys, req.message, history),
         _action_with_retry(llm, action_sys, req.message, history),
     )
 
