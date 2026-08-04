@@ -2,6 +2,8 @@
 
 AIエージェントとテキスト対話しながら文章を作成するアプリケーション。
 
+https://github.com/user-attachments/assets/b8ae0bf6-394d-4283-9a6b-88a713ef1a13
+
 ## セットアップ
 
 ### 1. 環境変数
