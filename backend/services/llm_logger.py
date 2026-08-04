@@ -60,12 +60,12 @@ class LoggingLLMService(LLMService):
         self._service_id = service_id
         self._model = model
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None) -> str:
         start = time.perf_counter()
         error = None
         response = ""
         try:
-            response = await self._adapter.generate_sync(system_prompt, user_prompt, history=history, response_schema=response_schema)
+            response = await self._adapter.generate_sync(system_prompt, user_prompt, history=history, response_schema=response_schema, thinking_level=thinking_level)
             return response
         except Exception as e:
             error = str(e)
@@ -85,12 +85,12 @@ class LoggingLLMService(LLMService):
                 history=history,
             )
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None) -> AsyncGenerator[str, None]:
         start = time.perf_counter()
         chunks: list[str] = []
         error = None
         try:
-            async for chunk in self._adapter.generate_stream(system_prompt, user_prompt, history=history):
+            async for chunk in self._adapter.generate_stream(system_prompt, user_prompt, history=history, thinking_level=thinking_level):
                 chunks.append(chunk)
                 yield chunk
         except Exception as e:

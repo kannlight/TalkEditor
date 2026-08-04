@@ -137,6 +137,7 @@ async def _style_update_with_retry(llm, system_prompt: str, user_prompt: str, hi
             label=f"style_update_attempt_{attempt + 1}",
             history=history,
             response_schema=StyleUpdateSchema,
+            thinking_level="low",
         )
         try:
             json.loads(raw)
@@ -153,6 +154,7 @@ async def _content_update_with_retry(llm, system_prompt: str, user_prompt: str, 
             label=f"content_update_attempt_{attempt + 1}",
             history=history,
             response_schema=ContentUpdateSchema,
+            thinking_level="low",
         )
         try:
             json.loads(raw)
@@ -169,6 +171,7 @@ async def _action_type_with_retry(llm, system_prompt: str, user_prompt: str, his
             label=f"action_type_attempt_{attempt + 1}",
             history=history,
             response_schema=ActionTypeSchema,
+            thinking_level="low",
         )
         try:
             data = json.loads(raw)
@@ -385,7 +388,7 @@ async def chat(req: ChatRequest):
                     editor_content=req.editor_content or "（まだありません）",
                 )
             try:
-                async for chunk in llm.generate_stream(msg_sys, req.message, label="message", history=history):
+                async for chunk in llm.generate_stream(msg_sys, req.message, label="message", history=history, thinking_level="low"):
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
             except Exception as e:
                 print(f"[Chat] Stream error: {e}")
