@@ -64,6 +64,35 @@ class OllamaAdapter(LLMService):
         self.base_url = base_url.rstrip('/')
         self.model_name = model_name
         self._client = httpx.AsyncClient(timeout=120.0)
+        self._supports_json_schema: bool | None = None  # None = 未確認
+
+    async def _check_json_schema_support(self) -> bool:
+        url = f"{self.base_url}/v1/chat/completions"
+        payload = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "test",
+                    "strict": True,
+                    "schema": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False},
+                },
+            },
+        }
+        try:
+            response = await self._client.post(url, json=payload)
+            supported = response.status_code != 400
+            print(f"[OllamaAdapter] json_schema support: {supported}")
+            return supported
+        except Exception:
+            return False
+
+    async def _get_json_schema_support(self) -> bool:
+        if self._supports_json_schema is None:
+            self._supports_json_schema = await self._check_json_schema_support()
+        return self._supports_json_schema
 
     def _build_messages(self, system_prompt: str, user_prompt: str, history: list[dict] | None) -> list[dict]:
         messages = [{"role": "system", "content": system_prompt}]
@@ -102,14 +131,17 @@ class OllamaAdapter(LLMService):
             "stream": False,
         }
         if response_schema is not None:
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": response_schema.__name__,
-                    "strict": True,
-                    "schema": response_schema.model_json_schema(),
-                },
-            }
+            if await self._get_json_schema_support():
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": response_schema.__name__,
+                        "strict": True,
+                        "schema": response_schema.model_json_schema(),
+                    },
+                }
+            else:
+                payload["response_format"] = {"type": "json_object"}
         response = await self._client.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
