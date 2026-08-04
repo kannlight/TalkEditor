@@ -16,29 +16,21 @@ function MessageBubble({ message, isLastUser, onEdit }) {
 
     const handleApprove = async () => {
         setIsEditing(true)
-        let fullContent = ''
-
-        await postEdit(
-            {
+        try {
+            const data = await postEdit({
                 style_context: contextStore.style,
                 edit_plan: message.action.plan,
                 editor_content: editorContent,
                 service_id: activeServiceId,
-            },
-            (data) => {
-                fullContent += data.content
-            },
-            () => {
-                setDraft(fullContent)
-                setActionStatus(message.id, 'approved')
-                setIsEditing(false)
-            },
-            (err) => {
-                console.error('Edit failed:', err)
-                setActionStatus(message.id, 'error')
-                setIsEditing(false)
-            },
-        )
+            })
+            setDraft(data.content)
+            setActionStatus(message.id, 'approved')
+        } catch (err) {
+            console.error('Edit failed:', err)
+            setActionStatus(message.id, 'error')
+        } finally {
+            setIsEditing(false)
+        }
     }
 
     const handleReject = () => {
@@ -133,6 +125,8 @@ function MessageBubble({ message, isLastUser, onEdit }) {
 
 export default function ChatPanel() {
     const [input, setInput] = useState('')
+    const [streamingContent, setStreamingContent] = useState(null)
+    const streamingContentRef = useRef(null)
     const { messages, isLoading, addMessage, setLoading, resetMessages, popLastUserMessage } = useChatStore()
     const contextStore = useContextStore()
     const { content: editorContent } = useEditorStore()
@@ -141,9 +135,9 @@ export default function ChatPanel() {
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, [messages, isLoading])
+    }, [messages, isLoading, streamingContent])
 
-    const handleSubmit = async () => {
+    const handleSubmit = () => {
         const text = input.trim()
         if (!text || isLoading) return
 
@@ -162,56 +156,69 @@ export default function ChatPanel() {
             .filter(m => m.content)
             .map(m => ({ role: m.role, content: m.content }))
 
-        try {
-            const response = await postChat({
+        postChat(
+            {
                 message: text,
                 style_context: contextStore.style,
                 content_context: contextStore.content,
                 editor_content: editorContent,
                 conversation_history: history,
                 service_id: activeServiceId,
-            })
+            },
+            (data) => {
+                if (data.type === 'meta') {
+                    if (data.style_update) contextStore.updateStyle(data.style_update)
+                    if (data.content_update) contextStore.updateContent(data.content_update)
 
-            if (response.style_update) {
-                contextStore.updateStyle(response.style_update)
-            }
-            if (response.content_update) {
-                contextStore.updateContent(response.content_update)
-            }
-
-            const { action } = response
-            if (action.type === 'edit_text') {
+                    const action = data.action
+                    if (action.type === 'edit_text') {
+                        addMessage({
+                            id: crypto.randomUUID(),
+                            role: 'assistant',
+                            content: action.plan || '文章を編集します。',
+                            action: {
+                                type: 'edit_text',
+                                plan: action.plan,
+                                status: 'pending',
+                            },
+                        })
+                    } else {
+                        streamingContentRef.current = ''
+                        setStreamingContent('')
+                    }
+                } else if (data.type === 'token') {
+                    streamingContentRef.current += data.content
+                    setStreamingContent(streamingContentRef.current)
+                }
+            },
+            () => {
+                if (streamingContentRef.current !== null) {
+                    addMessage({
+                        id: crypto.randomUUID(),
+                        role: 'assistant',
+                        content: streamingContentRef.current,
+                        action: null,
+                    })
+                    streamingContentRef.current = null
+                    setStreamingContent(null)
+                }
+                setLoading(false)
+            },
+            (err) => {
+                console.error('Chat failed:', err)
+                streamingContentRef.current = null
+                setStreamingContent(null)
+                const detail = err.message?.includes('HTTP error') ? '' : err.message
                 addMessage({
                     id: crypto.randomUUID(),
                     role: 'assistant',
-                    content: action.plan || '文章を編集します。',
-                    action: {
-                        type: 'edit_text',
-                        plan: action.plan,
-                        status: 'pending',
-                    },
-                })
-            } else {
-                addMessage({
-                    id: crypto.randomUUID(),
-                    role: 'assistant',
-                    content: action.message || '',
+                    content: detail || 'エラーが発生しました。',
                     action: null,
+                    isError: true,
                 })
-            }
-        } catch (err) {
-            console.error('Chat failed:', err)
-            const detail = err.message?.includes('HTTP error') ? '' : err.message
-            addMessage({
-                id: crypto.randomUUID(),
-                role: 'assistant',
-                content: detail || 'エラーが発生しました。',
-                action: null,
-                isError: true,
-            })
-        } finally {
-            setLoading(false)
-        }
+                setLoading(false)
+            },
+        )
     }
 
     const handleKeyDown = (e) => {
@@ -238,7 +245,7 @@ export default function ChatPanel() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                {messages.length === 0 && (
+                {messages.length === 0 && streamingContent === null && (
                     <div className="h-full flex items-center justify-center">
                         <p className="text-sm text-muted-foreground/60 text-center">
                             書きたいことを教えてください
@@ -261,7 +268,14 @@ export default function ChatPanel() {
                         />
                     )
                 })}
-                {isLoading && (
+                {streamingContent !== null ? (
+                    <div className="flex justify-start mb-4">
+                        <div className="max-w-[88%] bg-muted text-foreground rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm whitespace-pre-wrap">
+                            {streamingContent}
+                            <span className="inline-block w-0.5 h-3.5 bg-foreground/50 ml-0.5 animate-pulse align-middle" />
+                        </div>
+                    </div>
+                ) : isLoading && (
                     <div className="flex justify-start mb-4">
                         <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
                             <Loader2 size={15} className="animate-spin text-muted-foreground" />

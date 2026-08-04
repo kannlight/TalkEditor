@@ -10,24 +10,18 @@ export function useGenerate() {
 
     const handleGenerate = async () => {
         setGenerating(true)
-        let fullContent = ''
-
-        await postGenerate(
-            {
+        try {
+            const data = await postGenerate({
                 style_context: styleCtx,
                 content_context: contentCtx,
                 service_id: activeServiceId,
-            },
-            (data) => { fullContent += data.content },
-            () => {
-                setDraft(fullContent)
-                setGenerating(false)
-            },
-            (err) => {
-                console.error('Generate failed:', err)
-                setGenerating(false)
-            },
-        )
+            })
+            setDraft(data.content)
+        } catch (err) {
+            console.error('Generate failed:', err)
+        } finally {
+            setGenerating(false)
+        }
     }
 
     return { isGenerating, handleGenerate }

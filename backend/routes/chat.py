@@ -43,18 +43,6 @@ class StyleUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class ActionResult(BaseModel):
-    type: str
-    message: Optional[str] = None
-    plan: Optional[str] = None
-
-
-class ChatResponse(BaseModel):
-    style_update: Optional[StyleUpdate] = None
-    content_update: Optional[str] = None
-    action: ActionResult
-
-
 class EditRequest(BaseModel):
     style_context: StyleContext
     edit_plan: str
@@ -87,9 +75,8 @@ class ContentUpdateSchema(BaseModel):
     content: Optional[str] = None
 
 
-class ActionSchema(BaseModel):
+class ActionTypeSchema(BaseModel):
     action: str
-    message: Optional[str] = None
     plan: Optional[str] = None
 
 
@@ -140,21 +127,6 @@ def parse_content_update_json(text: str) -> Optional[str]:
         return None
 
 
-def parse_action_json(text: str) -> Optional[ActionResult]:
-    try:
-        data = json.loads(text)
-        action_type = data.get("action", "")
-        if action_type not in ("question", "clarify", "edit_text"):
-            return None
-        if action_type == "edit_text":
-            return ActionResult(type="edit_text", plan=data.get("plan", ""))
-        else:
-            message = data.get("message", "")
-            return ActionResult(type=action_type, message=message) if message else None
-    except (json.JSONDecodeError, Exception):
-        return None
-
-
 MAX_RETRIES = 3
 
 
@@ -190,18 +162,22 @@ async def _content_update_with_retry(llm, system_prompt: str, user_prompt: str, 
     return None
 
 
-async def _action_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> ActionResult:
+async def _action_type_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> ActionTypeSchema:
     for attempt in range(MAX_RETRIES):
         raw = await llm.generate_sync(
             system_prompt, user_prompt,
-            label=f"action_attempt_{attempt + 1}",
+            label=f"action_type_attempt_{attempt + 1}",
             history=history,
-            response_schema=ActionSchema,
+            response_schema=ActionTypeSchema,
         )
-        result = parse_action_json(raw)
-        if result is not None:
-            return result
-        print(f"[Action] Retry {attempt + 1}: valid JSON not found")
+        try:
+            data = json.loads(raw)
+            action = data.get("action", "")
+            if action in ("question", "clarify", "edit_text"):
+                return ActionTypeSchema(action=action, plan=data.get("plan"))
+        except (json.JSONDecodeError, Exception):
+            pass
+        print(f"[ActionType] Retry {attempt + 1}: invalid response")
     raise HTTPException(status_code=502, detail="アクション選択に失敗しました。再度お試しください。")
 
 
@@ -244,7 +220,7 @@ CONTENT_UPDATE_SYSTEM = """あなたはライティング支援AIのコンポー
 - 更新がある場合: {{"updated": true, "content": "更新後の箇条書き全体"}}
 - 更新がない場合: {{"updated": false, "content": null}}"""
 
-ACTION_SYSTEM = """あなたはライティング支援AIエージェントです。
+ACTION_TYPE_SYSTEM = """あなたはライティング支援AIエージェントです。
 ユーザーの発話に対して、適切なアクションを1つ選択してください。
 
 現在の状況:
@@ -269,10 +245,10 @@ ACTION_SYSTEM = """あなたはライティング支援AIエージェントで�
 
 出力ルール:
 - JSON形式で出力する
-- question/clarify: {{"action": "question", "message": "メッセージ本文"}}
+- question/clarify: {{"action": "question"}} または {{"action": "clarify"}}
 - edit_text: {{"action": "edit_text", "plan": "何をどう編集するかの説明"}}"""
 
-ACTION_SYSTEM_EMPTY_EDITOR = """あなたはライティング支援AIエージェントです。
+ACTION_TYPE_SYSTEM_EMPTY_EDITOR = """あなたはライティング支援AIエージェントです。
 ユーザーの発話に対して、適切なアクションを1つ選択してください。
 
 現在の状況:
@@ -288,14 +264,41 @@ ACTION_SYSTEM_EMPTY_EDITOR = """あなたはライティング支援AIエージ�
 - question : 書きたい内容についてユーザーに質問する（アイデアを引き出す）
 - clarify  : ユーザーの指示の意図が不明瞭なとき、確認のための質問をする
 
-選択基準:
-- ユーザーがアイデアや内容を話している → question（次に聞くべきことを質問する）
-- 指示の意図が読み取れない → clarify
-
 出力ルール:
 - JSON形式で出力する
-- {{"action": "question", "message": "メッセージ本文"}}
-- {{"action": "clarify", "message": "メッセージ本文"}}"""
+- {{"action": "question"}} または {{"action": "clarify"}}"""
+
+QUESTION_SYSTEM = """あなたはライティング支援AIエージェントです。
+ユーザーの発話を受けて、書きたい内容についての質問をしてください。アイデアやイメージを聞き出すことが目的です。
+
+現在の状況:
+[スタイル設定]
+{style_context}
+
+[書きたい内容のメモ]
+{content_context}
+
+[現在の文章]
+{editor_content}
+
+出力ルール:
+- 質問のみを出力する（説明文などは一切付けない）"""
+
+CLARIFY_SYSTEM = """あなたはライティング支援AIエージェントです。
+ユーザーの発話に対して、指示の意図を確認してください。
+
+現在の状況:
+[スタイル設定]
+{style_context}
+
+[書きたい内容のメモ]
+{content_context}
+
+[現在の文章]
+{editor_content}
+
+出力ルール:
+- 確認のための質問のみを出力する（説明文などは一切付けない）"""
 
 GENERATE_SYSTEM = """あなたはライティング支援AIです。
 スタイル設定と内容メモをもとに、文章を新規作成してください。
@@ -326,13 +329,14 @@ EDIT_SYSTEM = """あなたはライティング支援AIです。
 
 # --- Endpoints ---
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat")
 async def chat(req: ChatRequest):
     llm = get_llm_service(req.service_id)
     if not llm:
         raise HTTPException(status_code=400, detail="LLMサービスが設定されていません。")
 
     style_str = style_context_to_str(req.style_context)
+    history = req.conversation_history[-6:]
 
     style_sys = STYLE_UPDATE_SYSTEM.format(style_context=style_str)
     content_sys = CONTENT_UPDATE_SYSTEM.format(
@@ -340,106 +344,91 @@ async def chat(req: ChatRequest):
     )
 
     if req.editor_content.strip():
-        action_sys = ACTION_SYSTEM.format(
+        action_sys = ACTION_TYPE_SYSTEM.format(
             style_context=style_str,
             content_context=req.content_context or "（まだありません）",
             editor_content=req.editor_content,
         )
     else:
-        action_sys = ACTION_SYSTEM_EMPTY_EDITOR.format(
+        action_sys = ACTION_TYPE_SYSTEM_EMPTY_EDITOR.format(
             style_context=style_str,
             content_context=req.content_context or "（まだありません）",
         )
 
-    history = req.conversation_history[-6:]
-
-    # 並列実行: LLM①-a, ①-b, ② (リトライ付き)
-    style_update, content_update, action = await asyncio.gather(
+    # 並列実行: スタイル更新・コンテンツ更新・アクション種別選択
+    style_update, content_update, action_type = await asyncio.gather(
         _style_update_with_retry(llm, style_sys, req.message, history),
         _content_update_with_retry(llm, content_sys, req.message, history),
-        _action_with_retry(llm, action_sys, req.message, history),
+        _action_type_with_retry(llm, action_sys, req.message, history),
     )
 
-    return ChatResponse(
-        style_update=style_update,
-        content_update=content_update,
-        action=action,
-    )
+    async def stream():
+        meta = {
+            "type": "meta",
+            "style_update": style_update.model_dump(exclude_none=True) if style_update else None,
+            "content_update": content_update,
+            "action": {"type": action_type.action, "plan": action_type.plan},
+        }
+        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+
+        if action_type.action in ("question", "clarify"):
+            if action_type.action == "question":
+                msg_sys = QUESTION_SYSTEM.format(
+                    style_context=style_str,
+                    content_context=req.content_context or "（まだありません）",
+                    editor_content=req.editor_content or "（まだありません）",
+                )
+            else:
+                msg_sys = CLARIFY_SYSTEM.format(
+                    style_context=style_str,
+                    content_context=req.content_context or "（まだありません）",
+                    editor_content=req.editor_content or "（まだありません）",
+                )
+            try:
+                async for chunk in llm.generate_stream(msg_sys, req.message, label="message", history=history):
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                print(f"[Chat] Stream error: {e}")
+                yield f"data: {json.dumps({'error': 'メッセージの生成中にエラーが発生しました。'}, ensure_ascii=False)}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @router.post("/edit")
 async def edit(req: EditRequest):
+    llm = get_llm_service(req.service_id)
+    if not llm:
+        raise HTTPException(status_code=400, detail="LLMサービスが設定されていません。")
+
     style_str = style_context_to_str(req.style_context)
-    system_prompt = EDIT_SYSTEM.format(
-        style_context=style_str,
-        edit_plan=req.edit_plan,
-    )
+    system_prompt = EDIT_SYSTEM.format(style_context=style_str, edit_plan=req.edit_plan)
     user_prompt = f"文章:\n{req.editor_content}"
 
-    async def generate():
-        llm = get_llm_service(req.service_id)
-        if not llm:
-            yield f"data: {json.dumps({'content': 'LLMサービスが設定されていません。'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        chunks: list[str] = []
-        try:
-            async for chunk in llm.generate_stream(system_prompt, user_prompt, label="edit"):
-                chunks.append(chunk)
-
-            if chunks:
-                for chunk in chunks:
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-
-        except Exception as e:
-            print(f"[Edit] Error: {e}")
-            yield f"data: {json.dumps({'error': '文章の編集中にエラーが発生しました。再度お試しください。'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        yield f"data: {json.dumps({'error': '文章の編集に失敗しました。再度お試しください。'})}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    try:
+        content = await llm.generate_sync(system_prompt, user_prompt, label="edit")
+        return {"content": content}
+    except Exception as e:
+        print(f"[Edit] Error: {e}")
+        raise HTTPException(status_code=502, detail="文章の編集中にエラーが発生しました。再度お試しください。")
 
 
 @router.post("/generate")
 async def generate_initial(req: GenerateRequest):
+    llm = get_llm_service(req.service_id)
+    if not llm:
+        raise HTTPException(status_code=400, detail="LLMサービスが設定されていません。")
+
     style_str = style_context_to_str(req.style_context)
     system_prompt = GENERATE_SYSTEM.format(
         style_context=style_str,
         content_context=req.content_context or "（未設定）",
     )
-    user_prompt = "文章を生成してください。"
 
-    async def stream():
-        llm = get_llm_service(req.service_id)
-        if not llm:
-            yield f"data: {json.dumps({'content': 'LLMサービスが設定されていません。'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        chunks: list[str] = []
-        try:
-            async for chunk in llm.generate_stream(system_prompt, user_prompt, label="generate"):
-                chunks.append(chunk)
-
-            if chunks:
-                for chunk in chunks:
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-
-        except Exception as e:
-            print(f"[Generate] Error: {e}")
-            yield f"data: {json.dumps({'error': '文章の生成中にエラーが発生しました。再度お試しください。'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        yield f"data: {json.dumps({'error': '文章の生成に失敗しました。再度お試しください。'})}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    try:
+        content = await llm.generate_sync(system_prompt, "文章を生成してください。", label="generate")
+        return {"content": content}
+    except Exception as e:
+        print(f"[Generate] Error: {e}")
+        raise HTTPException(status_code=502, detail="文章の生成中にエラーが発生しました。再度お試しください。")
