@@ -129,6 +129,7 @@ export default function ChatPanel() {
     const streamingContentRef = useRef(null)
     const { messages, isLoading, addMessage, setLoading, resetMessages, popLastUserMessage } = useChatStore()
     const contextStore = useContextStore()
+    const setContextUpdating = useContextStore(s => s.setUpdating)
     const { content: editorContent } = useEditorStore()
     const { activeServiceId } = useSettingsStore()
     const messagesEndRef = useRef(null)
@@ -166,19 +167,15 @@ export default function ChatPanel() {
                 service_id: activeServiceId,
             },
             (data) => {
-                if (data.type === 'meta') {
-                    if (data.style_update) contextStore.updateStyle(data.style_update)
-                    if (data.content_update) contextStore.updateContent(data.content_update)
-
-                    const action = data.action
-                    if (action.type === 'edit_text') {
+                if (data.type === 'action') {
+                    if (data.action === 'edit_text') {
                         addMessage({
                             id: crypto.randomUUID(),
                             role: 'assistant',
-                            content: action.plan || '文章を編集します。',
+                            content: data.plan || '文章を編集します。',
                             action: {
                                 type: 'edit_text',
-                                plan: action.plan,
+                                plan: data.plan,
                                 status: 'pending',
                             },
                         })
@@ -189,9 +186,26 @@ export default function ChatPanel() {
                 } else if (data.type === 'token') {
                     streamingContentRef.current += data.content
                     setStreamingContent(streamingContentRef.current)
+                } else if (data.type === 'message_done') {
+                    if (streamingContentRef.current !== null) {
+                        addMessage({
+                            id: crypto.randomUUID(),
+                            role: 'assistant',
+                            content: streamingContentRef.current,
+                            action: null,
+                        })
+                        streamingContentRef.current = null
+                        setStreamingContent(null)
+                    }
+                    setLoading(false)
+                    setContextUpdating(true)
+                } else if (data.type === 'meta') {
+                    if (data.style_update) contextStore.updateStyle(data.style_update)
+                    if (data.content_update) contextStore.updateContent(data.content_update)
                 }
             },
             () => {
+                // message_done未受信のフォールバック（通信エラー等）
                 if (streamingContentRef.current !== null) {
                     addMessage({
                         id: crypto.randomUUID(),
@@ -203,6 +217,7 @@ export default function ChatPanel() {
                     setStreamingContent(null)
                 }
                 setLoading(false)
+                setContextUpdating(false)
             },
             (err) => {
                 console.error('Chat failed:', err)
@@ -217,6 +232,7 @@ export default function ChatPanel() {
                     isError: true,
                 })
                 setLoading(false)
+                setContextUpdating(false)
             },
         )
     }

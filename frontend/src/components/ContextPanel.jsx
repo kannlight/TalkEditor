@@ -15,12 +15,18 @@ const TEXT_FIELDS = [
 const FORMAT_OPTIONS = ['Plain', 'Markdown', 'LaTeX', 'HTML']
 
 export default function ContextPanel() {
-    const { style, content, updateStyle, updateContent } = useContextStore()
+    const { style, content, isUpdating, updateStyle, updateContent } = useContextStore()
     const { content: editorContent, draft: editorDraft } = useEditorStore()
     const { isGenerating, handleGenerate } = useGenerate()
 
     return (
-        <div className="h-full overflow-y-auto p-4 custom-scrollbar space-y-6">
+        <div className="relative h-full overflow-y-auto p-4 custom-scrollbar space-y-6">
+            {isUpdating && (
+                <div className="absolute inset-0 z-10 bg-background/60 backdrop-blur-[1px] flex flex-col items-center justify-center gap-2">
+                    <Loader2 size={20} className="animate-spin text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">コンテキスト更新中...</span>
+                </div>
+            )}
             {/* スタイル設定 */}
             <section>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">

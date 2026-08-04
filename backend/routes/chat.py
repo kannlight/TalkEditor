@@ -358,22 +358,14 @@ async def chat(req: ChatRequest):
             content_context=req.content_context or "（まだありません）",
         )
 
-    # 並列実行: スタイル更新・コンテンツ更新・アクション種別選択
-    style_update, content_update, action_type = await asyncio.gather(
-        _style_update_with_retry(llm, style_sys, req.message, history),
-        _content_update_with_retry(llm, content_sys, req.message, history),
-        _action_type_with_retry(llm, action_sys, req.message, history),
-    )
+    # 直列実行: アクション選択 → メッセージ生成 → コンテンツ更新 → スタイル更新
+    action_type = await _action_type_with_retry(llm, action_sys, req.message, history)
 
     async def stream():
-        meta = {
-            "type": "meta",
-            "style_update": style_update.model_dump(exclude_none=True) if style_update else None,
-            "content_update": content_update,
-            "action": {"type": action_type.action, "plan": action_type.plan},
-        }
-        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        # アクション種別を先行送信
+        yield f"data: {json.dumps({'type': 'action', 'action': action_type.action, 'plan': action_type.plan}, ensure_ascii=False)}\n\n"
 
+        # question/clarify の場合はメッセージを即時ストリーミング
         if action_type.action in ("question", "clarify"):
             if action_type.action == "question":
                 msg_sys = QUESTION_SYSTEM.format(
@@ -393,6 +385,20 @@ async def chat(req: ChatRequest):
             except Exception as e:
                 print(f"[Chat] Stream error: {e}")
                 yield f"data: {json.dumps({'error': 'メッセージの生成中にエラーが発生しました。'}, ensure_ascii=False)}\n\n"
+
+        yield f"data: {json.dumps({'type': 'message_done'}, ensure_ascii=False)}\n\n"
+
+        # コンテキスト更新（コンテンツ → スタイルの順）
+        content_update = await _content_update_with_retry(llm, content_sys, req.message, history)
+        style_update = await _style_update_with_retry(llm, style_sys, req.message, history)
+
+        # コンテキスト更新結果を送信
+        meta = {
+            "type": "meta",
+            "style_update": style_update.model_dump(exclude_none=True) if style_update else None,
+            "content_update": content_update,
+        }
+        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
         yield "data: [DONE]\n\n"
 

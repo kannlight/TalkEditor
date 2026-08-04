@@ -17,6 +17,9 @@ const storeCreator = (set) => ({
     style: { ...INITIAL_STYLE },
     content: '',
     updatedAt: 0,
+    isUpdating: false,
+
+    setUpdating: (bool) => set({ isUpdating: bool }),
 
     updateStyle: (patch) => set((state) => {
         const clean = Object.fromEntries(
