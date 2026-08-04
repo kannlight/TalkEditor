@@ -64,35 +64,47 @@ class OllamaAdapter(LLMService):
         self.base_url = base_url.rstrip('/')
         self.model_name = model_name
         self._client = httpx.AsyncClient(timeout=120.0)
-        self._supports_json_schema: bool | None = None  # None = 未確認
+        self._response_format_mode: str | None = None  # None=未確認, "json_schema"/"json_object"/"none"
 
-    async def _check_json_schema_support(self) -> bool:
+    async def _detect_response_format_mode(self) -> str:
         url = f"{self.base_url}/v1/chat/completions"
-        payload = {
+        base_payload = {
             "model": self.model_name,
             "messages": [{"role": "user", "content": "hi"}],
             "max_tokens": 1,
-            "response_format": {
+        }
+        # json_schema を試す
+        try:
+            payload = {**base_payload, "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "test",
                     "strict": True,
                     "schema": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False},
                 },
-            },
-        }
-        try:
+            }}
             response = await self._client.post(url, json=payload)
-            supported = response.status_code != 400
-            print(f"[OllamaAdapter] json_schema support: {supported}")
-            return supported
+            if response.status_code != 400:
+                print(f"[OllamaAdapter] response_format mode: json_schema")
+                return "json_schema"
         except Exception:
-            return False
+            pass
+        # json_object を試す
+        try:
+            payload = {**base_payload, "response_format": {"type": "json_object"}}
+            response = await self._client.post(url, json=payload)
+            if response.status_code != 400:
+                print(f"[OllamaAdapter] response_format mode: json_object")
+                return "json_object"
+        except Exception:
+            pass
+        print(f"[OllamaAdapter] response_format mode: none")
+        return "none"
 
-    async def _get_json_schema_support(self) -> bool:
-        if self._supports_json_schema is None:
-            self._supports_json_schema = await self._check_json_schema_support()
-        return self._supports_json_schema
+    async def _get_response_format_mode(self) -> str:
+        if self._response_format_mode is None:
+            self._response_format_mode = await self._detect_response_format_mode()
+        return self._response_format_mode
 
     def _build_messages(self, system_prompt: str, user_prompt: str, history: list[dict] | None) -> list[dict]:
         messages = [{"role": "system", "content": system_prompt}]
@@ -131,7 +143,8 @@ class OllamaAdapter(LLMService):
             "stream": False,
         }
         if response_schema is not None:
-            if await self._get_json_schema_support():
+            mode = await self._get_response_format_mode()
+            if mode == "json_schema":
                 payload["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
@@ -140,7 +153,7 @@ class OllamaAdapter(LLMService):
                         "schema": response_schema.model_json_schema(),
                     },
                 }
-            else:
+            elif mode == "json_object":
                 payload["response_format"] = {"type": "json_object"}
         response = await self._client.post(url, json=payload)
         response.raise_for_status()
