@@ -339,7 +339,7 @@ async def chat(req: ChatRequest):
         raise HTTPException(status_code=400, detail="LLMサービスが設定されていません。")
 
     style_str = style_context_to_str(req.style_context)
-    history = req.conversation_history[-6:]
+    history = req.conversation_history
 
     style_sys = STYLE_UPDATE_SYSTEM.format(style_context=style_str)
     content_sys = CONTENT_UPDATE_SYSTEM.format(
