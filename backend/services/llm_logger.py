@@ -30,6 +30,8 @@ class LLMCallLogger:
         success: bool,
         error: Optional[str] = None,
         history: list[dict] | None = None,
+        thinking_level: str | None = None,
+        thinking: str | None = None,
     ):
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -39,6 +41,8 @@ class LLMCallLogger:
             "duration_ms": round(duration_ms),
             "success": success,
             "error": error,
+            "thinking_level": thinking_level,
+            "thinking": thinking or None,
             "system_prompt": system_prompt,
             "history": history or [],
             "user_prompt": user_prompt,
@@ -47,8 +51,10 @@ class LLMCallLogger:
         with open(self._log_path(), "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+        thinking_info = f" | thinking={thinking_level}" if thinking_level else ""
+        thinking_tokens_info = f" | thinking_tokens={len(thinking)}chars" if thinking else ""
         status = "OK" if success else "ERROR"
-        print(f"[LLM] {label} | {service_id}/{model} | {round(duration_ms)}ms | {status}")
+        print(f"[LLM] {label} | {service_id}/{model} | {round(duration_ms)}ms | {status}{thinking_info}{thinking_tokens_info}")
 
 
 _logger = LLMCallLogger()
@@ -60,17 +66,25 @@ class LoggingLLMService(LLMService):
         self._service_id = service_id
         self._model = model
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None, thinking_tokens: list | None = None) -> str:
         start = time.perf_counter()
         error = None
         response = ""
+        collected_thinking: list[str] = []
         try:
-            response = await self._adapter.generate_sync(system_prompt, user_prompt, history=history, response_schema=response_schema, thinking_level=thinking_level)
+            response = await self._adapter.generate_sync(
+                system_prompt, user_prompt,
+                history=history,
+                response_schema=response_schema,
+                thinking_level=thinking_level,
+                thinking_tokens=collected_thinking,
+            )
             return response
         except Exception as e:
             error = str(e)
             raise
         finally:
+            thinking_text = "".join(collected_thinking) or None
             duration_ms = (time.perf_counter() - start) * 1000
             _logger.log(
                 label=label or "unknown",
@@ -83,20 +97,31 @@ class LoggingLLMService(LLMService):
                 success=error is None,
                 error=error,
                 history=history,
+                thinking_level=thinking_level,
+                thinking=thinking_text,
             )
+            if thinking_tokens is not None:
+                thinking_tokens.extend(collected_thinking)
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None, thinking_tokens: list | None = None) -> AsyncGenerator[str, None]:
         start = time.perf_counter()
         chunks: list[str] = []
+        collected_thinking: list[str] = []
         error = None
         try:
-            async for chunk in self._adapter.generate_stream(system_prompt, user_prompt, history=history, thinking_level=thinking_level):
+            async for chunk in self._adapter.generate_stream(
+                system_prompt, user_prompt,
+                history=history,
+                thinking_level=thinking_level,
+                thinking_tokens=collected_thinking,
+            ):
                 chunks.append(chunk)
                 yield chunk
         except Exception as e:
             error = str(e)
             raise
         finally:
+            thinking_text = "".join(collected_thinking) or None
             duration_ms = (time.perf_counter() - start) * 1000
             _logger.log(
                 label=label or "unknown",
@@ -109,4 +134,8 @@ class LoggingLLMService(LLMService):
                 success=error is None,
                 error=error,
                 history=history,
+                thinking_level=thinking_level,
+                thinking=thinking_text,
             )
+            if thinking_tokens is not None:
+                thinking_tokens.extend(collected_thinking)

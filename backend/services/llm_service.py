@@ -14,11 +14,11 @@ class LLMResponse(BaseModel):
 
 class LLMService(abc.ABC):
     @abc.abstractmethod
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None, thinking_tokens: list | None = None) -> AsyncGenerator[str, None]:
         pass
 
     @abc.abstractmethod
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None, thinking_tokens: list | None = None) -> str:
         pass
 
 
@@ -38,15 +38,25 @@ class GeminiAdapter(LLMService):
     def _build_thinking_config(self, thinking_level: str | None):
         if thinking_level is None:
             return None
-        # Gemini 2.5以前: thinking_budget（トークン数）で制御
         # Gemini 3以降: thinking_level（文字列）で制御
+        # Gemini 2.5以前: thinking_budget（トークン数）で制御
         if "gemini-3" in self.model_name or "gemini-4" in self.model_name:
-            return types.ThinkingConfig(thinking_level=thinking_level)
+            return types.ThinkingConfig(thinking_level=thinking_level, include_thoughts=True)
         else:
             budget = 512 if thinking_level == "low" else 2048
-            return types.ThinkingConfig(thinking_budget=budget)
+            return types.ThinkingConfig(thinking_budget=budget, include_thoughts=True)
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None) -> AsyncGenerator[str, None]:
+    def _collect_thinking_from_parts(self, parts, thinking_tokens: list | None):
+        if thinking_tokens is None:
+            return
+        try:
+            for part in parts:
+                if getattr(part, "thought", False) and part.text:
+                    thinking_tokens.append(part.text)
+        except (AttributeError, TypeError):
+            pass
+
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None, thinking_tokens: list | None = None) -> AsyncGenerator[str, None]:
         config_kwargs = {"system_instruction": system_prompt}
         thinking_config = self._build_thinking_config(thinking_level)
         if thinking_config is not None:
@@ -56,10 +66,14 @@ class GeminiAdapter(LLMService):
             config=types.GenerateContentConfig(**config_kwargs),
             contents=self._build_contents(user_prompt, history),
         ):
+            try:
+                self._collect_thinking_from_parts(chunk.candidates[0].content.parts, thinking_tokens)
+            except (AttributeError, IndexError):
+                pass
             if chunk.text:
                 yield chunk.text
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None, thinking_tokens: list | None = None) -> str:
         config_kwargs = {"system_instruction": system_prompt}
         if response_schema is not None:
             config_kwargs["response_mime_type"] = "application/json"
@@ -72,6 +86,10 @@ class GeminiAdapter(LLMService):
             config=types.GenerateContentConfig(**config_kwargs),
             contents=self._build_contents(user_prompt, history),
         )
+        try:
+            self._collect_thinking_from_parts(response.candidates[0].content.parts, thinking_tokens)
+        except (AttributeError, IndexError):
+            pass
         return response.text
 
 
@@ -152,7 +170,7 @@ class OllamaAdapter(LLMService):
         messages.append({"role": "user", "content": user_prompt})
         return messages
 
-    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, thinking_level: str | None = None, thinking_tokens: list | None = None) -> AsyncGenerator[str, None]:
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model_name,
@@ -171,13 +189,17 @@ class OllamaAdapter(LLMService):
                     break
                 try:
                     chunk = json.loads(data)
-                    delta = chunk["choices"][0]["delta"].get("content", "")
-                    if delta:
-                        yield delta
+                    delta = chunk["choices"][0]["delta"]
+                    reasoning = delta.get("reasoning") or delta.get("reasoning_content") or ""
+                    if reasoning and thinking_tokens is not None:
+                        thinking_tokens.append(reasoning)
+                    content = delta.get("content", "")
+                    if content:
+                        yield content
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
-    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None) -> str:
+    async def generate_sync(self, system_prompt: str, user_prompt: str, label: str = "", history: list[dict] | None = None, response_schema: type | None = None, thinking_level: str | None = None, thinking_tokens: list | None = None) -> str:
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model_name,
@@ -202,4 +224,8 @@ class OllamaAdapter(LLMService):
         response = await self._client.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
+        reasoning = message.get("reasoning") or message.get("reasoning_content") or message.get("thinking") or ""
+        if reasoning and thinking_tokens is not None:
+            thinking_tokens.append(reasoning)
+        return message["content"]
