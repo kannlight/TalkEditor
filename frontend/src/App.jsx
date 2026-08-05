@@ -62,7 +62,7 @@ function App() {
 
     return (
         <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
-            <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-background/95 backdrop-blur shrink-0 z-20">
+            <header className="flex items-center justify-between px-6 py-3 border-b border-border bg-background/95 backdrop-blur shrink-0 z-20">
                 <button
                     onClick={handleReturnToList}
                     className="flex items-center gap-3 hover:opacity-75 transition-opacity"
