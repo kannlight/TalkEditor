@@ -70,7 +70,7 @@ export default function EditorPanel() {
             extensions: [
                 basicSetup,
                 EditorView.lineWrapping,
-                placeholder('ここに直接書き始めるか、左のチャットで対話しながら生成できます'),
+                placeholder('沢山チャットして！「もう十分」と判断したら生成ボタンを押して！\nまたは編集したい文章を直接ここに書き込んで使うこともできるよ！'),
                 editorBaseTheme,
                 themeCompartment.current.of(getThemeExt(theme)),
                 langCompartment.current.of(getLangExt(styleCtx.format)),
