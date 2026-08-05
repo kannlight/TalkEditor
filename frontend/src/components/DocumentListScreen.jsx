@@ -40,11 +40,9 @@ export default function DocumentListScreen() {
 
     return (
         <div className="min-h-screen bg-secondary/30 text-foreground flex flex-col">
-            <header className="flex items-center justify-between px-8 py-4 bg-background border-b border-border shrink-0">
+            <header className="flex items-center justify-between px-8 py-5 bg-background border-b border-border shrink-0">
                 <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-bold shadow-sm text-sm">
-                        T
-                    </div>
+                    <img src="/app-icon.png" alt="TalkEditor" className="w-12 h-12 rounded-lg shadow-sm object-cover" />
                     <h1 className="text-lg font-bold tracking-tight">TalkEditor</h1>
                 </div>
                 <button

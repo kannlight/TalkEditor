@@ -62,15 +62,13 @@ function App() {
 
     return (
         <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
-            <header className="flex items-center justify-between px-6 py-3 border-b border-border bg-background/95 backdrop-blur shrink-0 z-20">
+            <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-background/95 backdrop-blur shrink-0 z-20">
                 <button
                     onClick={handleReturnToList}
                     className="flex items-center gap-3 hover:opacity-75 transition-opacity"
                     title="文章一覧に戻る"
                 >
-                    <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-bold shadow-sm text-sm">
-                        T
-                    </div>
+                    <img src="/app-icon.png" alt="TalkEditor" className="w-12 h-12 rounded-lg shadow-sm object-cover" />
                     <h1 className="text-lg font-bold tracking-tight">TalkEditor</h1>
                 </button>
                 <div className="flex items-center gap-3">
