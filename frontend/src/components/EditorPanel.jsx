@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { Compartment, EditorState, ChangeSet } from '@codemirror/state'
 import { EditorView, basicSetup } from 'codemirror'
+import { placeholder } from '@codemirror/view'
 import { unifiedMergeView, updateOriginalDoc, getOriginalDoc, getChunks } from '@codemirror/merge'
 import { markdown } from '@codemirror/lang-markdown'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -69,6 +70,7 @@ export default function EditorPanel() {
             extensions: [
                 basicSetup,
                 EditorView.lineWrapping,
+                placeholder('ここに直接書き始めるか、左のチャットで対話しながら生成できます'),
                 editorBaseTheme,
                 themeCompartment.current.of(getThemeExt(theme)),
                 langCompartment.current.of(getLangExt(styleCtx.format)),
@@ -196,14 +198,11 @@ export default function EditorPanel() {
             <div className="flex-1 overflow-hidden relative">
                 <div ref={containerRef} className="h-full" />
                 {!draft && !hasDiff && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm">
-                        <p className="text-sm text-muted-foreground text-center max-w-[240px]">
-                            対話が十分になったら、文章の生成を開始できます
-                        </p>
+                    <div className="absolute inset-x-0 bottom-6 flex justify-center pointer-events-none">
                         <button
                             onClick={handleGenerate}
                             disabled={isGenerating}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-60 transition-all shadow-sm"
+                            className="pointer-events-auto flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-60 transition-all shadow-md"
                         >
                             {isGenerating ? (
                                 <>
