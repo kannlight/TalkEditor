@@ -17,7 +17,7 @@ const FORMAT_OPTIONS = ['Plain', 'Markdown', 'LaTeX', 'HTML']
 export default function ContextPanel() {
     const { style, content, isUpdating, updateStyle, updateContent } = useContextStore()
     const { content: editorContent, draft: editorDraft } = useEditorStore()
-    const { isGenerating, handleGenerate } = useGenerate()
+    const { isGenerating, handleGenerate, additionalInstruction, setAdditionalInstruction } = useGenerate()
 
     return (
         <div className="relative h-full overflow-y-auto p-4 custom-scrollbar space-y-6">
@@ -105,23 +105,33 @@ export default function ContextPanel() {
             </section>
 
             {!editorContent && !editorDraft && (
-                <button
-                    onClick={handleGenerate}
-                    disabled={isGenerating}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-60 transition-all shadow-sm"
-                >
-                    {isGenerating ? (
-                        <>
-                            <Loader2 size={15} className="animate-spin" />
-                            生成中...
-                        </>
-                    ) : (
-                        <>
-                            <Pencil size={15} />
-                            文章を生成する
-                        </>
-                    )}
-                </button>
+                <div className="relative">
+                    <textarea
+                        value={additionalInstruction}
+                        onChange={e => setAdditionalInstruction(e.target.value)}
+                        disabled={isGenerating}
+                        rows={1}
+                        placeholder="追加指示（任意）"
+                        className="w-full text-sm bg-background border border-input rounded-lg pl-3 pr-[42%] py-2.5 focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
+                    />
+                    <button
+                        onClick={handleGenerate}
+                        disabled={isGenerating}
+                        className="absolute top-1 bottom-1 right-1.5 w-[40%] flex items-center justify-center gap-1.5 px-3 bg-primary text-primary-foreground text-sm font-medium rounded-md hover:opacity-90 disabled:opacity-60 transition-all"
+                    >
+                        {isGenerating ? (
+                            <>
+                                <Loader2 size={13} className="animate-spin" />
+                                生成中...
+                            </>
+                        ) : (
+                            <>
+                                <Pencil size={13} />
+                                文章を生成する
+                            </>
+                        )}
+                    </button>
+                </div>
             )}
         </div>
     )

@@ -41,7 +41,7 @@ export default function EditorPanel() {
     const { content, draft, setDraft, confirmDraft, discardDraft } = useEditorStore()
     const { theme } = useSettingsStore()
     const { style: styleCtx } = useContextStore()
-    const { isGenerating, handleGenerate } = useGenerate()
+    const { isGenerating, handleGenerate, additionalInstruction, setAdditionalInstruction } = useGenerate()
     const [hasDiff, setHasDiff] = useState(false)
 
     const containerRef = useRef(null)
@@ -198,24 +198,34 @@ export default function EditorPanel() {
             <div className="flex-1 overflow-hidden relative">
                 <div ref={containerRef} className="h-full" />
                 {!draft && !hasDiff && (
-                    <div className="absolute inset-x-0 bottom-6 flex justify-center pointer-events-none">
-                        <button
-                            onClick={handleGenerate}
-                            disabled={isGenerating}
-                            className="pointer-events-auto flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-60 transition-all shadow-md"
-                        >
-                            {isGenerating ? (
-                                <>
-                                    <Loader2 size={15} className="animate-spin" />
-                                    生成中...
-                                </>
-                            ) : (
-                                <>
-                                    <Pencil size={15} />
-                                    文章を生成する
-                                </>
-                            )}
-                        </button>
+                    <div className="absolute inset-x-0 bottom-6 flex justify-center pointer-events-none px-8">
+                        <div className="pointer-events-auto relative w-full max-w-md shadow-md">
+                            <textarea
+                                value={additionalInstruction}
+                                onChange={e => setAdditionalInstruction(e.target.value)}
+                                disabled={isGenerating}
+                                rows={1}
+                                placeholder="追加指示（任意）"
+                                className="w-full text-sm bg-background/95 border border-input rounded-lg pl-3 pr-[42%] py-2.5 focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
+                            />
+                            <button
+                                onClick={handleGenerate}
+                                disabled={isGenerating}
+                                className="absolute top-1 bottom-1 right-1.5 w-[40%] flex items-center justify-center gap-1.5 px-3 bg-primary text-primary-foreground text-sm font-medium rounded-md hover:opacity-90 disabled:opacity-60 transition-all"
+                            >
+                                {isGenerating ? (
+                                    <>
+                                        <Loader2 size={13} className="animate-spin" />
+                                        生成中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Pencil size={13} />
+                                        文章を生成する
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

@@ -54,6 +54,7 @@ class GenerateRequest(BaseModel):
     style_context: StyleContext
     content_context: str
     service_id: str
+    additional_instruction: str | None = None
 
 
 # --- LLM応答スキーマ ---
@@ -314,7 +315,8 @@ GENERATE_SYSTEM = """あなたはライティング支援AIです。
 
 出力ルール:
 - 生成した文章のみを出力する
-- 説明文などは一切付けない"""
+- 説明文などは一切付けない
+- ユーザーからの「追加指示」がある時はそれに従う"""
 
 EDIT_SYSTEM = """あなたはライティング支援AIです。
 編集計画に従って与えられた文章を書き換えてください。
@@ -435,8 +437,12 @@ async def generate_initial(req: GenerateRequest):
         content_context=req.content_context or "（未設定）",
     )
 
+    user_prompt = "文章を生成してください。"
+    if req.additional_instruction:
+        user_prompt += f"\n\n追加指示: {req.additional_instruction}"
+
     try:
-        content = await llm.generate_sync(system_prompt, "文章を生成してください。", label="generate")
+        content = await llm.generate_sync(system_prompt, user_prompt, label="generate")
         return {"content": content}
     except Exception as e:
         print(f"[Generate] Error: {e}")
