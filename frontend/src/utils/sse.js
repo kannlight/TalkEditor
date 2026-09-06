@@ -50,6 +50,7 @@ export async function fetchSSE(url, options, onMessage, onDone, onError) {
         }
         onDone && onDone()
     } catch (err) {
+        if (err.name === 'AbortError') return
         onError && onError(err)
     }
 }

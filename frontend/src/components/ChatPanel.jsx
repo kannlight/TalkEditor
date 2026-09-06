@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Loader2, Check, X, RotateCcw, Pencil } from 'lucide-react'
+import { Send, Loader2, Check, X, RotateCcw, Pencil, Square } from 'lucide-react'
 import useChatStore from '../stores/chatStore'
 import useContextStore from '../stores/contextStore'
 import useEditorStore from '../stores/editorStore'
 import useSettingsStore from '../stores/settingsStore'
+import useAbortStore from '../stores/abortStore'
 import { postChat } from '../api/chat'
 import { postEdit } from '../api/edit'
 
@@ -13,23 +14,30 @@ function MessageBubble({ message, isLastUser, onEdit }) {
     const contextStore = useContextStore()
     const { content: editorContent, setDraft } = useEditorStore()
     const { activeServiceId } = useSettingsStore()
+    const { start: abortStart, finish: abortFinish } = useAbortStore()
 
     const handleApprove = async () => {
         setIsEditing(true)
+        const signal = abortStart()
         try {
             const data = await postEdit({
                 style_context: contextStore.style,
                 edit_plan: message.action.plan,
                 editor_content: editorContent,
                 service_id: activeServiceId,
-            })
+            }, signal)
             setDraft(data.content)
             setActionStatus(message.id, 'approved')
         } catch (err) {
-            console.error('Edit failed:', err)
-            setActionStatus(message.id, 'error')
+            if (err.name === 'AbortError') {
+                // ユーザーが停止 → pending のまま
+            } else {
+                console.error('Edit failed:', err)
+                setActionStatus(message.id, 'error')
+            }
         } finally {
             setIsEditing(false)
+            abortFinish()
         }
     }
 
@@ -128,6 +136,7 @@ export default function ChatPanel() {
     const [streamingContent, setStreamingContent] = useState(null)
     const streamingContentRef = useRef(null)
     const { messages, isLoading, addMessage, setLoading, resetMessages, popLastUserMessage } = useChatStore()
+    const { isProcessing, start: abortStart, finish: abortFinish, abort: abortAll } = useAbortStore()
     const contextStore = useContextStore()
     const setContextUpdating = useContextStore(s => s.setUpdating)
     const { content: editorContent } = useEditorStore()
@@ -138,9 +147,22 @@ export default function ChatPanel() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages, isLoading, streamingContent])
 
+    const handleStop = () => {
+        const wasInChatStream = isLoading
+        abortAll()
+        if (wasInChatStream) {
+            const content = popLastUserMessage()
+            if (content) setInput(content)
+            streamingContentRef.current = null
+            setStreamingContent(null)
+            setLoading(false)
+        }
+        setContextUpdating(false)
+    }
+
     const handleSubmit = () => {
         const text = input.trim()
-        if (!text || isLoading) return
+        if (!text || isProcessing) return
 
         const userMsg = {
             id: crypto.randomUUID(),
@@ -156,6 +178,8 @@ export default function ChatPanel() {
         const history = messages
             .filter(m => m.content)
             .map(m => ({ role: m.role, content: m.content }))
+
+        const signal = abortStart()
 
         postChat(
             {
@@ -218,6 +242,7 @@ export default function ChatPanel() {
                 }
                 setLoading(false)
                 setContextUpdating(false)
+                abortFinish()
             },
             (err) => {
                 console.error('Chat failed:', err)
@@ -233,7 +258,9 @@ export default function ChatPanel() {
                 })
                 setLoading(false)
                 setContextUpdating(false)
+                abortFinish()
             },
+            signal,
         )
     }
 
@@ -311,13 +338,23 @@ export default function ChatPanel() {
                         rows={3}
                         className="w-full resize-none pl-4 pr-12 py-2.5 text-sm bg-muted/40 text-foreground border border-input rounded-xl focus:bg-background focus:ring-2 focus:ring-ring outline-none transition-all"
                     />
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!input.trim() || isLoading}
-                        className="absolute right-2 bottom-2 p-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:bg-muted disabled:text-muted-foreground transition-all"
-                    >
-                        <Send size={13} />
-                    </button>
+                    {isProcessing ? (
+                        <button
+                            onClick={handleStop}
+                            className="absolute right-2 bottom-2 p-2 bg-destructive text-destructive-foreground rounded-lg hover:opacity-90 transition-all"
+                            title="生成を停止"
+                        >
+                            <Square size={13} />
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleSubmit}
+                            disabled={!input.trim()}
+                            className="absolute right-2 bottom-2 p-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:bg-muted disabled:text-muted-foreground transition-all"
+                        >
+                            <Send size={13} />
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

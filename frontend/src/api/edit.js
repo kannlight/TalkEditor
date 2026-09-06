@@ -1,8 +1,9 @@
-export async function postEdit(payload) {
+export async function postEdit(payload, signal) {
     const response = await fetch('/api/edit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal,
     })
     if (!response.ok) {
         const body = await response.json().catch(() => null)
@@ -11,11 +12,12 @@ export async function postEdit(payload) {
     return response.json()
 }
 
-export async function postGenerate(payload) {
+export async function postGenerate(payload, signal) {
     const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal,
     })
     if (!response.ok) {
         const body = await response.json().catch(() => null)
