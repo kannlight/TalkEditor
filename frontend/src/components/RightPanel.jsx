@@ -13,11 +13,10 @@ export default function RightPanel() {
     const hasDiff = draft !== content
     const contextUpdatedAt = useContextStore(s => s.updatedAt)
     const resetContext = useContextStore(s => s.resetContext)
-    const contextStyle = useContextStore(s => s.style)
-    const contextContent = useContextStore(s => s.content)
+    const context = useContextStore(s => s.context)
     const hasMountedRef = useRef(false)
 
-    const hasContextData = contextContent || Object.values(contextStyle).some(v =>
+    const hasContextData = Object.values(context).some(v =>
         Array.isArray(v) ? v.length > 0 : (v && v !== 'Plain')
     )
 

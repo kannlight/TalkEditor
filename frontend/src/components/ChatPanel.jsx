@@ -21,7 +21,7 @@ function MessageBubble({ message, isLastUser, onEdit }) {
         const signal = abortStart()
         try {
             const data = await postEdit({
-                style_context: contextStore.style,
+                context: contextStore.context,
                 edit_plan: message.action.plan,
                 editor_content: editorContent,
                 service_id: activeServiceId,
@@ -184,8 +184,7 @@ export default function ChatPanel() {
         postChat(
             {
                 message: text,
-                style_context: contextStore.style,
-                content_context: contextStore.content,
+                context: contextStore.context,
                 editor_content: editorContent,
                 conversation_history: history,
                 service_id: activeServiceId,
@@ -224,8 +223,7 @@ export default function ChatPanel() {
                     setLoading(false)
                     setContextUpdating(true)
                 } else if (data.type === 'meta') {
-                    if (data.style_update) contextStore.updateStyle(data.style_update)
-                    if (data.content_update) contextStore.updateContent(data.content_update)
+                    if (data.context_update) contextStore.update(data.context_update)
                 }
             },
             () => {

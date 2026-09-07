@@ -40,7 +40,13 @@ class GeminiAdapter(LLMService):
             return None
         # Gemini 3以降: thinking_level（文字列）で制御
         # Gemini 2.5以前: thinking_budget（トークン数）で制御
-        if "gemini-3" in self.model_name or "gemini-4" in self.model_name:
+        is_v3plus = "gemini-3" in self.model_name or "gemini-4" in self.model_name
+        if thinking_level == "none":
+            # thinking を明示的に無効化
+            if is_v3plus:
+                return types.ThinkingConfig(thinking_level="none", include_thoughts=False)
+            return types.ThinkingConfig(thinking_budget=0, include_thoughts=False)
+        if is_v3plus:
             return types.ThinkingConfig(thinking_level=thinking_level, include_thoughts=True)
         else:
             budget = 512 if thinking_level == "low" else 2048

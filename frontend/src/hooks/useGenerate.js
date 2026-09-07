@@ -7,7 +7,7 @@ import { postGenerate } from '../api/edit'
 
 export function useGenerate() {
     const { isGenerating, setGenerating, setDraft } = useEditorStore()
-    const { style: styleCtx, content: contentCtx } = useContextStore()
+    const { context } = useContextStore()
     const { activeServiceId } = useSettingsStore()
     const { start: abortStart, finish: abortFinish } = useAbortStore()
     const [additionalInstruction, setAdditionalInstruction] = useState('')
@@ -25,8 +25,7 @@ export function useGenerate() {
         setGenerating(true)
         try {
             const data = await postGenerate({
-                style_context: styleCtx,
-                content_context: contentCtx,
+                context,
                 service_id: activeServiceId,
                 additional_instruction: additionalInstruction.trim() || null,
             }, signal)

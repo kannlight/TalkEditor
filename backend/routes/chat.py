@@ -12,7 +12,8 @@ router = APIRouter()
 
 # --- Pydantic Models ---
 
-class StyleContext(BaseModel):
+class Context(BaseModel):
+    """文章作成のコンテキスト"""
     theme: str = ""
     purpose: str = ""
     audience: str = ""
@@ -21,18 +22,19 @@ class StyleContext(BaseModel):
     style: list[str] = []
     length: str = ""
     notes: str = ""
+    content: str = ""
 
 
 class ChatRequest(BaseModel):
     message: str
-    style_context: StyleContext
-    content_context: str
+    context: Context
     editor_content: str
     conversation_history: list[dict]
     service_id: str
 
 
-class StyleUpdate(BaseModel):
+class ContextUpdate(BaseModel):
+    """LLMが返すコンテキストの部分更新（未更新フィールドはNone）。"""
     theme: Optional[str] = None
     purpose: Optional[str] = None
     audience: Optional[str] = None
@@ -41,25 +43,25 @@ class StyleUpdate(BaseModel):
     style: Optional[list[str]] = None
     length: Optional[str] = None
     notes: Optional[str] = None
+    content: Optional[str] = None
 
 
 class EditRequest(BaseModel):
-    style_context: StyleContext
+    context: Context
     edit_plan: str
     editor_content: str
     service_id: str
 
 
 class GenerateRequest(BaseModel):
-    style_context: StyleContext
-    content_context: str
+    context: Context
     service_id: str
     additional_instruction: str | None = None
 
 
 # --- LLM応答スキーマ ---
 
-class StyleUpdateSchema(BaseModel):
+class ContextUpdateSchema(BaseModel):
     updated: bool
     theme: Optional[str] = None
     purpose: Optional[str] = None
@@ -69,10 +71,6 @@ class StyleUpdateSchema(BaseModel):
     style: Optional[list[str]] = None
     length: Optional[str] = None
     notes: Optional[str] = None
-
-
-class ContentUpdateSchema(BaseModel):
-    updated: bool
     content: Optional[str] = None
 
 
@@ -83,7 +81,10 @@ class ActionTypeSchema(BaseModel):
 
 # --- Helpers ---
 
-def style_context_to_str(ctx: StyleContext) -> str:
+CONTEXT_FIELDS = ("theme", "purpose", "audience", "image", "format", "style", "length", "notes", "content")
+
+
+def context_to_str(ctx: Context) -> str:
     lines = []
     if ctx.theme:
         lines.append(f"テーマ・トピック: {ctx.theme}")
@@ -100,68 +101,51 @@ def style_context_to_str(ctx: StyleContext) -> str:
         lines.append(f"文章の量感: {ctx.length}")
     if ctx.notes:
         lines.append(f"その他メモ: {ctx.notes}")
+    if ctx.content:
+        lines.append(f"書きたい内容のメモ:\n{ctx.content}")
     return "\n".join(lines) if lines else "（未設定）"
 
 
-def parse_style_update_json(text: str) -> Optional[StyleUpdate]:
+def parse_context_update_json(text: str) -> Optional[ContextUpdate]:
+    """コンテキスト更新JSONを ContextUpdate（部分パッチ）に変換する"""
     try:
         data = json.loads(text)
-        if not data.get("updated", False):
-            return None
-        patch = {}
-        for key in ("theme", "purpose", "audience", "image", "format", "style", "length", "notes"):
-            if key in data and data[key] is not None:
-                patch[key] = data[key]
-        return StyleUpdate(**patch) if patch else None
-    except (json.JSONDecodeError, Exception):
+    except (json.JSONDecodeError, TypeError):
         return None
 
-
-def parse_content_update_json(text: str) -> Optional[str]:
-    try:
-        data = json.loads(text)
-        if not data.get("updated", False):
-            return None
-        content = data.get("content")
-        return content.strip() if content else None
-    except (json.JSONDecodeError, Exception):
+    if not data.get("updated", False):
         return None
+
+    patch = {}
+    for key in CONTEXT_FIELDS:
+        if key in data and data[key] is not None:
+            value = data[key]
+            if key == "content" and isinstance(value, str):
+                value = value.strip()
+                if not value:
+                    continue
+            patch[key] = value
+    return ContextUpdate(**patch) if patch else None
 
 
 MAX_RETRIES = 3
 
 
-async def _style_update_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> Optional[StyleUpdate]:
+async def _context_update_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> Optional[ContextUpdate]:
+    """コンテキストの更新を1リクエストで取得する"""
     for attempt in range(MAX_RETRIES):
         raw = await llm.generate_sync(
             system_prompt, user_prompt,
-            label=f"style_update_attempt_{attempt + 1}",
+            label=f"context_update_attempt_{attempt + 1}",
             history=history,
-            response_schema=StyleUpdateSchema,
+            response_schema=ContextUpdateSchema,
             thinking_level="low",
         )
         try:
             json.loads(raw)
-            return parse_style_update_json(raw)
-        except json.JSONDecodeError:
-            print(f"[StyleUpdate] Retry {attempt + 1}: invalid JSON")
-    return None
-
-
-async def _content_update_with_retry(llm, system_prompt: str, user_prompt: str, history: list[dict]) -> Optional[str]:
-    for attempt in range(MAX_RETRIES):
-        raw = await llm.generate_sync(
-            system_prompt, user_prompt,
-            label=f"content_update_attempt_{attempt + 1}",
-            history=history,
-            response_schema=ContentUpdateSchema,
-            thinking_level="low",
-        )
-        try:
-            json.loads(raw)
-            return parse_content_update_json(raw)
-        except json.JSONDecodeError:
-            print(f"[ContentUpdate] Retry {attempt + 1}: invalid JSON")
+            return parse_context_update_json(raw)
+        except (json.JSONDecodeError, TypeError):
+            print(f"[ContextUpdate] Retry {attempt + 1}: invalid JSON")
     return None
 
 
@@ -172,7 +156,7 @@ async def _action_type_with_retry(llm, system_prompt: str, user_prompt: str, his
             label=f"action_type_attempt_{attempt + 1}",
             history=history,
             response_schema=ActionTypeSchema,
-            thinking_level="low",
+            thinking_level="none",
         )
         try:
             data = json.loads(raw)
@@ -187,11 +171,11 @@ async def _action_type_with_retry(llm, system_prompt: str, user_prompt: str, his
 
 # --- Prompts ---
 
-STYLE_UPDATE_SYSTEM = """あなたはライティング支援AIのコンポーネントです。
-ユーザーの発話を受けて、文章のスタイル設定を更新してください。
+CONTEXT_UPDATE_SYSTEM = """あなたはライティング支援AIのコンポーネントです。
+ユーザーの発話を受けて、文章作成の要件を更新してください。
 
-現在のスタイル設定:
-{style_context}
+現在の要件:
+{context}
 
 更新対象フィールド:
 - theme: テーマ・トピック
@@ -202,37 +186,18 @@ STYLE_UPDATE_SYSTEM = """あなたはライティング支援AIのコンポー�
 - style: スタイル（箇条書き多用 / パラグラフライティング / だ・である調 等、具体的な指定、複数可。文字列の配列として出力）
 - length: 文章の量感
 - notes: その他メモ
+- content: 書きたい内容のメモ。ユーザーの言葉をなるべくそのまま引用し、既存のメモに新しい情報を統合して論理的な順序に並べたメモを出力する
 
 出力ルール:
 - JSON形式で出力する
-- 更新がある場合: "updated"をtrueにし、更新するフィールドのみ含める
-- 更新がない場合: {{"updated": false}}
-- 例: {{"updated": true, "theme": "AI技術の未来", "style": ["だ・である調", "箇条書き多用"]}}"""
-
-CONTENT_UPDATE_SYSTEM = """あなたはライティング支援AIのコンポーネントです。
-ユーザーの発話を受けて、書きたい内容のメモ（箇条書き）を更新してください。
-
-現在のメモ:
-{content_context}
-
-更新ルール:
-- ユーザーの言葉をなるべくそのまま引用する
-- 現在のメモに新しい情報を統合し、論理的な順序に並べる
-
-出力ルール:
-- JSON形式で出力する
-- 更新がある場合: {{"updated": true, "content": "更新後の箇条書き全体"}}
-- 更新がない場合: {{"updated": false, "content": null}}"""
+- 更新がある場合: "updated" を true にし、更新するフィールドのみ含める
+- 更新がない場合: {{"updated": false}}"""
 
 ACTION_TYPE_SYSTEM = """あなたはライティング支援AIエージェントです。
 ユーザーの発話に対して、適切なアクションを1つ選択してください。
 
-現在の状況:
-[スタイル設定]
-{style_context}
-
-[書きたい内容のメモ]
-{content_context}
+現在の要件:
+{context}
 
 [現在の文章]
 {editor_content}
@@ -255,12 +220,8 @@ ACTION_TYPE_SYSTEM = """あなたはライティング支援AIエージェント
 ACTION_TYPE_SYSTEM_EMPTY_EDITOR = """あなたはライティング支援AIエージェントです。
 ユーザーの発話に対して、適切なアクションを1つ選択してください。
 
-現在の状況:
-[スタイル設定]
-{style_context}
-
-[書きたい内容のメモ]
-{content_context}
+現在の要件:
+{context}
 
 ※ 現在、文章はまだ存在しません。ユーザーはこれから作成する内容を整理している段階です。
 
@@ -275,12 +236,8 @@ ACTION_TYPE_SYSTEM_EMPTY_EDITOR = """あなたはライティング支援AIエ�
 QUESTION_SYSTEM = """あなたはライティング支援AIエージェントです。
 ユーザーの発話を受けて、書きたい内容についての質問をしてください。アイデアやイメージを聞き出すことが目的です。
 
-現在の状況:
-[スタイル設定]
-{style_context}
-
-[書きたい内容のメモ]
-{content_context}
+現在の要件:
+{context}
 
 [現在の文章]
 {editor_content}
@@ -291,12 +248,8 @@ QUESTION_SYSTEM = """あなたはライティング支援AIエージェントで
 CLARIFY_SYSTEM = """あなたはライティング支援AIエージェントです。
 ユーザーの発話に対して、指示の意図を確認してください。
 
-現在の状況:
-[スタイル設定]
-{style_context}
-
-[書きたい内容のメモ]
-{content_context}
+現在の要件:
+{context}
 
 [現在の文章]
 {editor_content}
@@ -305,13 +258,10 @@ CLARIFY_SYSTEM = """あなたはライティング支援AIエージェントで�
 - 確認のための質問のみを出力する（説明文などは一切付けない）"""
 
 GENERATE_SYSTEM = """あなたはライティング支援AIです。
-スタイル設定と内容メモをもとに、文章を新規作成してください。
+要件をもとに、文章を新規作成してください。
 
-スタイル設定:
-{style_context}
-
-内容メモ:
-{content_context}
+要件:
+{context}
 
 出力ルール:
 - 生成した文章のみを出力する
@@ -321,8 +271,8 @@ GENERATE_SYSTEM = """あなたはライティング支援AIです。
 EDIT_SYSTEM = """あなたはライティング支援AIです。
 編集計画に従って与えられた文章を書き換えてください。
 
-スタイル設定:
-{style_context}
+要件:
+{context}
 
 編集計画:
 {edit_plan}
@@ -340,27 +290,20 @@ async def chat(req: ChatRequest):
     if not llm:
         raise HTTPException(status_code=400, detail="LLMサービスが設定されていません。")
 
-    style_str = style_context_to_str(req.style_context)
+    context_str = context_to_str(req.context)
     history = req.conversation_history
 
-    style_sys = STYLE_UPDATE_SYSTEM.format(style_context=style_str)
-    content_sys = CONTENT_UPDATE_SYSTEM.format(
-        content_context=req.content_context or "（まだありません）"
-    )
+    context_sys = CONTEXT_UPDATE_SYSTEM.format(context=context_str)
 
     if req.editor_content.strip():
         action_sys = ACTION_TYPE_SYSTEM.format(
-            style_context=style_str,
-            content_context=req.content_context or "（まだありません）",
+            context=context_str,
             editor_content=req.editor_content,
         )
     else:
-        action_sys = ACTION_TYPE_SYSTEM_EMPTY_EDITOR.format(
-            style_context=style_str,
-            content_context=req.content_context or "（まだありません）",
-        )
+        action_sys = ACTION_TYPE_SYSTEM_EMPTY_EDITOR.format(context=context_str)
 
-    # 直列実行: アクション選択 → メッセージ生成 → コンテンツ更新 → スタイル更新
+    # 直列実行: アクション選択 → メッセージ生成 → コンテキスト更新
     action_type = await _action_type_with_retry(llm, action_sys, req.message, history)
 
     async def stream():
@@ -371,18 +314,16 @@ async def chat(req: ChatRequest):
         if action_type.action in ("question", "clarify"):
             if action_type.action == "question":
                 msg_sys = QUESTION_SYSTEM.format(
-                    style_context=style_str,
-                    content_context=req.content_context or "（まだありません）",
+                    context=context_str,
                     editor_content=req.editor_content or "（まだありません）",
                 )
             else:
                 msg_sys = CLARIFY_SYSTEM.format(
-                    style_context=style_str,
-                    content_context=req.content_context or "（まだありません）",
+                    context=context_str,
                     editor_content=req.editor_content or "（まだありません）",
                 )
             try:
-                async for chunk in llm.generate_stream(msg_sys, req.message, label="message", history=history, thinking_level="low"):
+                async for chunk in llm.generate_stream(msg_sys, req.message, label="message", history=history, thinking_level="none"):
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
             except Exception as e:
                 print(f"[Chat] Stream error: {e}")
@@ -390,15 +331,13 @@ async def chat(req: ChatRequest):
 
         yield f"data: {json.dumps({'type': 'message_done'}, ensure_ascii=False)}\n\n"
 
-        # コンテキスト更新（コンテンツ → スタイルの順）
-        content_update = await _content_update_with_retry(llm, content_sys, req.message, history)
-        style_update = await _style_update_with_retry(llm, style_sys, req.message, history)
+        # コンテキスト更新
+        context_update = await _context_update_with_retry(llm, context_sys, req.message, history)
 
         # コンテキスト更新結果を送信
         meta = {
             "type": "meta",
-            "style_update": style_update.model_dump(exclude_none=True) if style_update else None,
-            "content_update": content_update,
+            "context_update": context_update.model_dump(exclude_none=True) if context_update else None,
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
@@ -413,8 +352,8 @@ async def edit(req: EditRequest):
     if not llm:
         raise HTTPException(status_code=400, detail="LLMサービスが設定されていません。")
 
-    style_str = style_context_to_str(req.style_context)
-    system_prompt = EDIT_SYSTEM.format(style_context=style_str, edit_plan=req.edit_plan)
+    context_str = context_to_str(req.context)
+    system_prompt = EDIT_SYSTEM.format(context=context_str, edit_plan=req.edit_plan)
     user_prompt = f"文章:\n{req.editor_content}"
 
     try:
@@ -431,11 +370,8 @@ async def generate_initial(req: GenerateRequest):
     if not llm:
         raise HTTPException(status_code=400, detail="LLMサービスが設定されていません。")
 
-    style_str = style_context_to_str(req.style_context)
-    system_prompt = GENERATE_SYSTEM.format(
-        style_context=style_str,
-        content_context=req.content_context or "（未設定）",
-    )
+    context_str = context_to_str(req.context)
+    system_prompt = GENERATE_SYSTEM.format(context=context_str)
 
     user_prompt = "文章を生成してください。"
     if req.additional_instruction:

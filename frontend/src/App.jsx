@@ -10,8 +10,8 @@ import useContextStore from './stores/contextStore'
 import useEditorStore from './stores/editorStore'
 import { docId } from './stores/docId'
 
-function getDocTitle(style, messages) {
-    if (style.theme) return style.theme
+function getDocTitle(context, messages) {
+    if (context.theme) return context.theme
     const first = messages.find(m => m.role === 'user')
     if (first) {
         const t = first.content
@@ -43,13 +43,12 @@ function App() {
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleReturnToList = () => {
-        const { style } = useContextStore.getState()
+        const { context } = useContextStore.getState()
         const { messages } = useChatStore.getState()
         const { content: editorContent } = useEditorStore.getState()
-        const { content: contextContent } = useContextStore.getState()
 
-        const title = getDocTitle(style, messages)
-        const src = editorContent || contextContent || ''
+        const title = getDocTitle(context, messages)
+        const src = editorContent || context.content || ''
         const preview = src.replace(/\n+/g, ' ').trim().slice(0, 100)
 
         updateEntry(docId, { title, preview, updatedAt: Date.now() })

@@ -40,7 +40,7 @@ const darkBgOverride = EditorView.theme({
 export default function EditorPanel() {
     const { content, draft, setDraft, confirmDraft, discardDraft } = useEditorStore()
     const { theme } = useSettingsStore()
-    const { style: styleCtx } = useContextStore()
+    const { context } = useContextStore()
     const { isGenerating, handleGenerate, additionalInstruction, setAdditionalInstruction } = useGenerate()
     const [hasDiff, setHasDiff] = useState(false)
 
@@ -73,7 +73,7 @@ export default function EditorPanel() {
                 placeholder('沢山チャットして！「もう十分」と判断したら生成ボタンを押して！\nまたは編集したい文章を直接ここに書き込んで使うこともできるよ！'),
                 editorBaseTheme,
                 themeCompartment.current.of(getThemeExt(theme)),
-                langCompartment.current.of(getLangExt(styleCtx.format)),
+                langCompartment.current.of(getLangExt(context.format)),
                 unifiedMergeView({ original, mergeControls: true, highlightChanges: true }),
                 EditorView.updateListener.of(update => {
                     if (update.docChanged) {
@@ -126,9 +126,9 @@ export default function EditorPanel() {
     // 言語の動的切り替え（フォーマット変更時）
     useEffect(() => {
         viewRef.current?.dispatch({
-            effects: langCompartment.current.reconfigure(getLangExt(styleCtx.format)),
+            effects: langCompartment.current.reconfigure(getLangExt(context.format)),
         })
-    }, [styleCtx.format]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [context.format]) // eslint-disable-line react-hooks/exhaustive-deps
 
     // store の draft が外部から更新された場合（LLM生成結果の反映）にエディタの doc を差し替え
     useEffect(() => {

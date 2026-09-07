@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { docId } from './docId'
 
-export const INITIAL_STYLE = {
+// 文章作成のコンテキスト。スタイルや書きたい内容のメモ。
+export const INITIAL_CONTEXT = {
     theme: '',
     purpose: '',
     audience: '',
@@ -11,36 +12,49 @@ export const INITIAL_STYLE = {
     style: [],
     length: '',
     notes: '',
+    content: '',
 }
 
 const storeCreator = (set) => ({
-    style: { ...INITIAL_STYLE },
-    content: '',
+    context: { ...INITIAL_CONTEXT },
     updatedAt: 0,
     isUpdating: false,
 
     setUpdating: (bool) => set({ isUpdating: bool }),
 
-    updateStyle: (patch) => set((state) => {
+    // 部分更新。null/undefined のフィールドは無視（LLM未更新フィールドを上書きしない）
+    update: (patch) => set((state) => {
         const clean = Object.fromEntries(
-            Object.entries(patch).filter(([, v]) => v !== null && v !== undefined)
+            Object.entries(patch || {}).filter(([, v]) => v !== null && v !== undefined)
         )
         if (Object.keys(clean).length === 0) return {}
         return {
-            style: { ...state.style, ...clean },
+            context: { ...state.context, ...clean },
             updatedAt: Date.now(),
         }
     }),
 
-    updateContent: (str) => set({ content: str, updatedAt: Date.now() }),
-
-    resetContext: () => set({ style: { ...INITIAL_STYLE }, content: '', updatedAt: 0 }),
+    resetContext: () => set({ context: { ...INITIAL_CONTEXT }, updatedAt: 0 }),
 })
 
 const useContextStore = docId
     ? create(persist(storeCreator, {
         name: `talkeditor-context-${docId}`,
-        partialize: (state) => ({ style: state.style, content: state.content }),
+        version: 1,
+        partialize: (state) => ({ context: state.context }),
+        // v0: { style: {...}, content: '' } → v1: { context: {...統合...} }
+        migrate: (persisted, version) => {
+            if (version < 1 && persisted && persisted.style) {
+                return {
+                    context: {
+                        ...INITIAL_CONTEXT,
+                        ...persisted.style,
+                        content: persisted.content || '',
+                    },
+                }
+            }
+            return persisted
+        },
     }))
     : create(storeCreator)
 

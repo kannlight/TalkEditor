@@ -15,7 +15,7 @@ const TEXT_FIELDS = [
 const FORMAT_OPTIONS = ['Plain', 'Markdown', 'LaTeX', 'HTML']
 
 export default function ContextPanel() {
-    const { style, content, isUpdating, updateStyle, updateContent } = useContextStore()
+    const { context, isUpdating, update } = useContextStore()
     const { content: editorContent, draft: editorDraft } = useEditorStore()
     const { isGenerating, handleGenerate, additionalInstruction, setAdditionalInstruction } = useGenerate()
 
@@ -27,10 +27,10 @@ export default function ContextPanel() {
                     <span className="text-xs text-muted-foreground">コンテキスト更新中...</span>
                 </div>
             )}
-            {/* スタイル設定 */}
+
             <section>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                    スタイル設定
+                    コンテキスト
                 </h3>
                 <div className="space-y-3">
                     {TEXT_FIELDS.map(({ key, label }) => (
@@ -40,8 +40,8 @@ export default function ContextPanel() {
                             </label>
                             <input
                                 type="text"
-                                value={style[key]}
-                                onChange={e => updateStyle({ [key]: e.target.value })}
+                                value={context[key]}
+                                onChange={e => update({ [key]: e.target.value })}
                                 className="w-full text-sm bg-background border border-input rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring"
                             />
                         </div>
@@ -52,8 +52,8 @@ export default function ContextPanel() {
                             フォーマット
                         </label>
                         <select
-                            value={style.format}
-                            onChange={e => updateStyle({ format: e.target.value })}
+                            value={context.format}
+                            onChange={e => update({ format: e.target.value })}
                             className="w-full text-sm bg-background border border-input rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring"
                         >
                             {FORMAT_OPTIONS.map(f => <option key={f}>{f}</option>)}
@@ -65,10 +65,10 @@ export default function ContextPanel() {
                             スタイル（1行1つ）
                         </label>
                         <textarea
-                            value={style.style.join('\n')}
+                            value={(context.style || []).join('\n')}
                             onChange={e => {
                                 const items = e.target.value.split('\n').map(s => s.trim()).filter(Boolean)
-                                updateStyle({ style: items })
+                                update({ style: items })
                             }}
                             rows={3}
                             placeholder={'だ・である調\n箇条書き多用'}
@@ -81,27 +81,26 @@ export default function ContextPanel() {
                             その他メモ
                         </label>
                         <textarea
-                            value={style.notes}
-                            onChange={e => updateStyle({ notes: e.target.value })}
+                            value={context.notes}
+                            onChange={e => update({ notes: e.target.value })}
                             rows={3}
                             className="w-full text-sm bg-background border border-input rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                         />
                     </div>
-                </div>
-            </section>
 
-            {/* コンテンツメモ */}
-            <section>
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                    コンテンツメモ
-                </h3>
-                <textarea
-                    value={content}
-                    onChange={e => updateContent(e.target.value)}
-                    rows={12}
-                    placeholder={'書きたい内容の箇条書き...\n- ポイント1\n- ポイント2'}
-                    className="w-full text-sm bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-                />
+                    <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">
+                            書きたい内容のメモ
+                        </label>
+                        <textarea
+                            value={context.content}
+                            onChange={e => update({ content: e.target.value })}
+                            rows={12}
+                            placeholder={'書きたい内容'}
+                            className="w-full text-sm bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                        />
+                    </div>
+                </div>
             </section>
 
             {!editorContent && !editorDraft && (
