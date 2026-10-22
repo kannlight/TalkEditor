@@ -2,6 +2,7 @@ import React from 'react'
 import { Plus, FileText, Trash2, Moon, Sun } from 'lucide-react'
 import useIndexStore from '../stores/indexStore'
 import useSettingsStore from '../stores/settingsStore'
+import { generateId } from '../utils/id'
 
 function formatDate(ts) {
     const diff = Date.now() - ts
@@ -20,7 +21,7 @@ export default function DocumentListScreen() {
     const { theme, toggleTheme } = useSettingsStore()
 
     const handleCreate = () => {
-        const id = crypto.randomUUID()
+        const id = generateId()
         addEntry({ id, title: '無題', preview: '', createdAt: Date.now(), updatedAt: Date.now() })
         window.location.href = `/${id}`
     }

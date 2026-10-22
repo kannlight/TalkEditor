@@ -7,6 +7,7 @@ import useSettingsStore from '../stores/settingsStore'
 import useAbortStore from '../stores/abortStore'
 import { postChat } from '../api/chat'
 import { postEdit } from '../api/edit'
+import { generateId } from '../utils/id'
 
 function MessageBubble({ message, isLastUser, onEdit }) {
     const [isEditing, setIsEditing] = useState(false)
@@ -165,7 +166,7 @@ export default function ChatPanel() {
         if (!text || isProcessing) return
 
         const userMsg = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             role: 'user',
             content: text,
             action: null,
@@ -193,7 +194,7 @@ export default function ChatPanel() {
                 if (data.type === 'action') {
                     if (data.action === 'edit_text') {
                         addMessage({
-                            id: crypto.randomUUID(),
+                            id: generateId(),
                             role: 'assistant',
                             content: data.plan || '文章を編集します。',
                             action: {
@@ -212,7 +213,7 @@ export default function ChatPanel() {
                 } else if (data.type === 'message_done') {
                     if (streamingContentRef.current !== null) {
                         addMessage({
-                            id: crypto.randomUUID(),
+                            id: generateId(),
                             role: 'assistant',
                             content: streamingContentRef.current,
                             action: null,
@@ -230,7 +231,7 @@ export default function ChatPanel() {
                 // message_done未受信のフォールバック（通信エラー等）
                 if (streamingContentRef.current !== null) {
                     addMessage({
-                        id: crypto.randomUUID(),
+                        id: generateId(),
                         role: 'assistant',
                         content: streamingContentRef.current,
                         action: null,
@@ -248,7 +249,7 @@ export default function ChatPanel() {
                 setStreamingContent(null)
                 const detail = err.message?.includes('HTTP error') ? '' : err.message
                 addMessage({
-                    id: crypto.randomUUID(),
+                    id: generateId(),
                     role: 'assistant',
                     content: detail || 'エラーが発生しました。',
                     action: null,
