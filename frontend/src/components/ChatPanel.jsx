@@ -264,7 +264,10 @@ export default function ChatPanel() {
     }
 
     const handleKeyDown = (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+        // Safari は IME 確定の Enter で compositionend 後に keydown を発火し isComposing=false になるため、
+        // keyCode 229（IME 処理中）も判定に含める
+        const composing = e.nativeEvent.isComposing || e.keyCode === 229
+        if (e.key === 'Enter' && !e.shiftKey && !composing) {
             e.preventDefault()
             handleSubmit()
         }
